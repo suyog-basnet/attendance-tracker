@@ -2,7 +2,12 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// ─── POST /attendance — mark present or absent (upsert) ──────────────────────
+// A day's attendance state can change at most this many times: the initial
+// mark counts as 1, one correction (including a Reset) counts as the 2nd.
+// After that it's locked until the next calendar day.
+const MAX_EDITS_PER_DAY = 2;
+
+// ─── POST /attendance — mark present or absent (upsert, rate-limited) ────────
 router.post('/', async (req, res, next) => {
   try {
     const { course_id, date, status } = req.body;
@@ -14,11 +19,23 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'status must be "present" or "absent"' });
     }
 
+    const { rows: existingRows } = await db.query(
+      `SELECT edit_count FROM attendance_records WHERE course_id = $1 AND date = $2`,
+      [course_id, date]
+    );
+
+    if (existingRows.length && existingRows[0].edit_count >= MAX_EDITS_PER_DAY) {
+      return res.status(409).json({
+        error: 'Locked: attendance for this day has already been changed the maximum number of times.',
+        edit_count: existingRows[0].edit_count,
+      });
+    }
+
     const { rows } = await db.query(
-      `INSERT INTO attendance_records (course_id, date, status)
-       VALUES ($1, $2, $3)
+      `INSERT INTO attendance_records (course_id, date, status, edit_count)
+       VALUES ($1, $2, $3, 1)
        ON CONFLICT (course_id, date)
-         DO UPDATE SET status = EXCLUDED.status
+         DO UPDATE SET status = EXCLUDED.status, edit_count = attendance_records.edit_count + 1
        RETURNING *`,
       [course_id, date, status]
     );
@@ -29,7 +46,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// ─── DELETE /attendance — reset (remove record) ───────────────────────────────
+// ─── DELETE /attendance — reset to unmarked (counts as a change, not free) ───
 router.delete('/', async (req, res, next) => {
   try {
     const { course_id, date } = req.body;
@@ -38,8 +55,29 @@ router.delete('/', async (req, res, next) => {
       return res.status(400).json({ error: 'course_id and date are required' });
     }
 
+    const { rows: existingRows } = await db.query(
+      `SELECT edit_count FROM attendance_records WHERE course_id = $1 AND date = $2`,
+      [course_id, date]
+    );
+
+    // Nothing recorded yet for this day — nothing to reset, and shouldn't burn an edit.
+    if (!existingRows.length) {
+      return res.status(204).send();
+    }
+
+    if (existingRows[0].edit_count >= MAX_EDITS_PER_DAY) {
+      return res.status(409).json({
+        error: 'Locked: attendance for this day has already been changed the maximum number of times.',
+        edit_count: existingRows[0].edit_count,
+      });
+    }
+
+    // Set status back to NULL rather than deleting the row, so the edit_count
+    // (and therefore the lock) survives a reset instead of resetting to 0.
     await db.query(
-      `DELETE FROM attendance_records WHERE course_id = $1 AND date = $2`,
+      `UPDATE attendance_records
+         SET status = NULL, edit_count = edit_count + 1
+       WHERE course_id = $1 AND date = $2`,
       [course_id, date]
     );
 
@@ -71,7 +109,7 @@ router.get('/:course_id/summary', async (req, res, next) => {
 
     // Full history
     const { rows: records } = await db.query(
-      `SELECT date, status
+      `SELECT date, status, edit_count
        FROM attendance_records
        WHERE course_id = $1
        ORDER BY date DESC`,

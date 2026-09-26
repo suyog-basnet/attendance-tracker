@@ -30,6 +30,7 @@ const SLOT_QUERY = `
     c.room
   FROM schedule_slots s
   JOIN courses c ON c.id = s.course_id
+  JOIN semesters sem ON sem.id = c.semester_id AND sem.is_active = TRUE
 `;
 
 // ─── GET /schedule/today ──────────────────────────────────────────────────────
@@ -70,6 +71,34 @@ router.get('/week', async (_req, res, next) => {
         slots,
       })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /schedule — add a new slot for a course ─────────────────────────────
+router.post('/', async (req, res, next) => {
+  try {
+    const { course_id, day_of_week, start_time, end_time } = req.body;
+    if (course_id == null || day_of_week == null || !start_time || !end_time) {
+      return res.status(400).json({ error: 'course_id, day_of_week, start_time, and end_time are required' });
+    }
+    const { rows } = await db.query(
+      `INSERT INTO schedule_slots (course_id, day_of_week, start_time, end_time)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [course_id, day_of_week, start_time, end_time]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── DELETE /schedule/:id — remove a slot ─────────────────────────────────────
+router.delete('/:id', async (req, res, next) => {
+  try {
+    await db.query(`DELETE FROM schedule_slots WHERE id = $1`, [req.params.id]);
+    res.status(204).send();
   } catch (err) {
     next(err);
   }

@@ -2,6 +2,19 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getAttendanceSummary, getCanMiss, AttendanceSummary } from "../api";
 
+function exportCsv(courseId: number, records: { date: string; status: string | null }[]) {
+  const rows = records.filter((r) => r.status !== null);
+  const header = "date,status";
+  const body = rows.map((r) => `${r.date.slice(0, 10)},${r.status}`).join("\n");
+  const blob = new Blob([`${header}\n${body}`], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `attendance_course_${courseId}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function CourseDetail() {
   const { id } = useParams();
   const courseId = Number(id);
@@ -61,9 +74,17 @@ export default function CourseDetail() {
             </div>
           )}
 
-          <h3 style={{ marginTop: 24, fontSize: 16 }}>History</h3>
-          {summary.records && summary.records.length > 0 ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
+            <h3 style={{ fontSize: 16, margin: 0 }}>History</h3>
+            {summary.records && summary.records.some((r) => r.status !== null) && (
+              <button className="btn" onClick={() => exportCsv(courseId, summary.records!)}>
+                Export CSV
+              </button>
+            )}
+          </div>
+          {summary.records && summary.records.filter((r) => r.status !== null).length > 0 ? (
             summary.records
+              .filter((r) => r.status !== null)
               .slice()
               .sort((a, b) => (a.date < b.date ? 1 : -1))
               .map((r) => (

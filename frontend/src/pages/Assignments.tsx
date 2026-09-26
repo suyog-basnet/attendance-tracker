@@ -4,7 +4,9 @@ import {
   createAssignment,
   updateAssignment,
   deleteAssignment,
+  getCourses,
   Assignment,
+  Course,
 } from "../api";
 
 function urgency(due_date: string | null): "overdue" | "soon" | "normal" {
@@ -17,10 +19,29 @@ function urgency(due_date: string | null): "overdue" | "soon" | "normal" {
 
 export default function Assignments() {
   const [items, setItems] = useState<Assignment[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [courseId, setCourseId] = useState<string>("");
+
+  const [search, setSearch] = useState("");
+  const [filterCourse, setFilterCourse] = useState<string>("all");
+  const [filterMode, setFilterMode] = useState<"all" | "overdue" | "pending">("all");
+
+  const courseById = (id: number | null) =>
+    id === null ? null : courses.find((c) => c.id === id) ?? null;
+
+  const visibleItems = items.filter((a) => {
+    if (search.trim() && !a.title.toLowerCase().includes(search.trim().toLowerCase())) return false;
+    if (filterCourse !== "all") {
+      if (filterCourse === "none" ? a.course_id !== null : a.course_id !== Number(filterCourse)) return false;
+    }
+    if (filterMode === "pending" && a.is_done) return false;
+    if (filterMode === "overdue" && urgency(a.due_date) !== "overdue") return false;
+    return true;
+  });
 
   function load() {
     setLoading(true);
@@ -38,14 +59,22 @@ export default function Assignments() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    getCourses().then(setCourses).catch(() => {});
+  }, []);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    await createAssignment({ title: title.trim(), due_date: dueDate || null });
+    await createAssignment({
+      title: title.trim(),
+      due_date: dueDate || null,
+      course_id: courseId ? Number(courseId) : null,
+    });
     setTitle("");
     setDueDate("");
+    setCourseId("");
     load();
   }
 
@@ -81,18 +110,50 @@ export default function Assignments() {
           onChange={(e) => setTitle(e.target.value)}
           style={{ flex: 1 }}
         />
+        <select value={courseId} onChange={(e) => setCourseId(e.target.value)}>
+          <option value="">No subject</option>
+          {courses.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.code}
+            </option>
+          ))}
+        </select>
         <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         <button className="btn primary" type="submit">
           Add
         </button>
       </form>
 
-      {items.length === 0 ? (
+      <div className="card" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="text"
+          placeholder="Search assignments..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <select value={filterCourse} onChange={(e) => setFilterCourse(e.target.value)}>
+          <option value="all">All subjects</option>
+          <option value="none">No subject</option>
+          {courses.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.code}
+            </option>
+          ))}
+        </select>
+        <select value={filterMode} onChange={(e) => setFilterMode(e.target.value as any)}>
+          <option value="all">All</option>
+          <option value="pending">Pending only</option>
+          <option value="overdue">Overdue only</option>
+        </select>
+      </div>
+
+      {visibleItems.length === 0 ? (
         <div className="empty-state">
-          <p>No assignments yet. Add one above.</p>
+          <p>{items.length === 0 ? "No assignments yet. Add one above." : "Nothing matches this filter."}</p>
         </div>
       ) : (
-        items.map((a) => {
+        visibleItems.map((a) => {
           const u = urgency(a.due_date);
           return (
             <div
@@ -110,6 +171,9 @@ export default function Assignments() {
                 <span style={{ textDecoration: a.is_done ? "line-through" : "none", opacity: a.is_done ? 0.5 : 1 }}>
                   {a.title}
                 </span>
+                {courseById(a.course_id) && (
+                  <span className="pill">{courseById(a.course_id)!.code}</span>
+                )}
               </label>
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                 {a.due_date && (

@@ -1,16 +1,39 @@
 import { useEffect, useState } from "react";
-import { getWeek, patchSlot, WeekDay } from "../api";
+import {
+  getWeek,
+  patchSlot,
+  deleteSlot,
+  getSemesters,
+  createSemester,
+  activateSemester,
+  getCourses,
+  createCourse,
+  deleteCourse,
+  createSlot,
+  WeekDay,
+  Semester,
+  Course,
+} from "../api";
+
+const DAY_OPTIONS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 export default function Settings() {
   const [days, setDays] = useState<WeekDay[]>([]);
+  const [semesters, setSemesters] = useState<Semester[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
+  const [newSemesterName, setNewSemesterName] = useState("");
 
   function load() {
     setLoading(true);
-    getWeek()
-      .then((data) => setDays(data.week))
+    Promise.all([getWeek(), getSemesters(), getCourses()])
+      .then(([week, sems, crs]) => {
+        setDays(week.week);
+        setSemesters(sems);
+        setCourses(crs);
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }
@@ -23,12 +46,32 @@ export default function Settings() {
     setTimeout(() => setSaved(null), 1500);
   }
 
+  async function handleDeleteSlot(slotId: number) {
+    await deleteSlot(slotId);
+    load();
+  }
+
+  async function handleCreateSemester(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newSemesterName.trim()) return;
+    await createSemester(newSemesterName.trim());
+    setNewSemesterName("");
+    load();
+  }
+
+  async function handleActivate(id: number) {
+    await activateSemester(id);
+    load();
+  }
+
   if (loading) return <p className="page-subtitle">Loading...</p>;
+
+  const activeSemester = semesters.find((s) => s.is_active);
 
   return (
     <div>
       <h2 className="page-title">Settings</h2>
-      <p className="page-subtitle">Edit class times when your routine changes</p>
+      <p className="page-subtitle">Semesters, courses, and class times</p>
 
       {error && (
         <div className="error-banner">
@@ -37,29 +80,172 @@ export default function Settings() {
         </div>
       )}
 
+      {/* ───────── Semesters ───────── */}
+      <h3 style={{ fontSize: 16, marginBottom: 8 }}>Semesters</h3>
+      {semesters.map((s) => (
+        <div
+          key={s.id}
+          className="card"
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+        >
+          <span style={{ fontWeight: s.is_active ? 700 : 400 }}>{s.name}</span>
+          {s.is_active ? (
+            <span className="pill" style={{ color: "var(--present)" }}>Active</span>
+          ) : (
+            <button className="btn" onClick={() => handleActivate(s.id)}>
+              Switch to this semester
+            </button>
+          )}
+        </div>
+      ))}
+      <form onSubmit={handleCreateSemester} className="card" style={{ display: "flex", gap: 8 }}>
+        <input
+          type="text"
+          placeholder="New semester name (e.g. 8th Semester)"
+          value={newSemesterName}
+          onChange={(e) => setNewSemesterName(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <button className="btn primary" type="submit">
+          Create
+        </button>
+      </form>
+      <p style={{ color: "var(--text-dim)", fontSize: 12, marginBottom: 24 }}>
+        Creating a semester doesn't switch to it automatically — add its courses first
+        (below), then switch when you're ready. Switching semesters doesn't delete
+        anything; past semesters' courses, attendance, and assignments stay intact.
+      </p>
+
+      {/* ───────── Courses in the active semester ───────── */}
+      <h3 style={{ fontSize: 16, marginBottom: 8 }}>
+        Courses in {activeSemester?.name ?? "the active semester"}
+      </h3>
+      {courses.length === 0 && (
+        <p style={{ color: "var(--text-dim)", fontSize: 13, marginBottom: 12 }}>
+          No courses yet — add one below.
+        </p>
+      )}
+      {courses.map((c) => (
+        <div key={c.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>{c.code} — {c.name}</div>
+            <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
+              {c.instructor}{c.room ? ` · ${c.room}` : ""}
+            </div>
+          </div>
+          <button
+            className="btn"
+            onClick={async () => {
+              if (confirm(`Delete ${c.code}? This also removes its schedule, attendance, and links to any assignments.`)) {
+                await deleteCourse(c.id);
+                load();
+              }
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      ))}
+      <AddCourseForm onAdded={load} />
+
+      {/* ───────── Weekly schedule for the active semester ───────── */}
+      <h3 style={{ fontSize: 16, margin: "32px 0 8px" }}>Weekly schedule</h3>
       {days.map((day) => (
         <div key={day.day_of_week} style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 15, color: "var(--text-muted)", marginBottom: 8 }}>{day.day_name}</h3>
+          <h4 style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 8 }}>{day.day_name}</h4>
           {day.slots.length === 0 ? (
             <p style={{ color: "var(--text-dim)", fontSize: 13 }}>No classes</p>
           ) : (
             day.slots.map((slot) => (
-              <SlotEditor key={slot.slot_id} slot={slot} onSave={handleSave} justSaved={saved === slot.slot_id} />
+              <SlotEditor
+                key={slot.slot_id}
+                slot={slot}
+                onSave={handleSave}
+                onDelete={handleDeleteSlot}
+                justSaved={saved === slot.slot_id}
+              />
             ))
           )}
         </div>
       ))}
+      <AddSlotForm courses={courses} onAdded={load} />
     </div>
+  );
+}
+
+function AddCourseForm({ onAdded }: { onAdded: () => void }) {
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [instructor, setInstructor] = useState("");
+  const [room, setRoom] = useState("");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!code.trim() || !name.trim() || !instructor.trim()) return;
+    await createCourse({ code: code.trim(), name: name.trim(), instructor: instructor.trim(), room: room.trim() || undefined });
+    setCode("");
+    setName("");
+    setInstructor("");
+    setRoom("");
+    onAdded();
+  }
+
+  return (
+    <form onSubmit={submit} className="card" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <input type="text" placeholder="Code (e.g. COMP 501)" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 140 }} />
+      <input type="text" placeholder="Course name" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
+      <input type="text" placeholder="Instructor" value={instructor} onChange={(e) => setInstructor(e.target.value)} style={{ width: 160 }} />
+      <input type="text" placeholder="Room (optional)" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 100 }} />
+      <button className="btn primary" type="submit">Add course</button>
+    </form>
+  );
+}
+
+function AddSlotForm({ courses, onAdded }: { courses: Course[]; onAdded: () => void }) {
+  const [courseId, setCourseId] = useState("");
+  const [day, setDay] = useState("0");
+  const [start, setStart] = useState("09:00");
+  const [end, setEnd] = useState("10:00");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!courseId) return;
+    await createSlot({ course_id: Number(courseId), day_of_week: Number(day), start_time: start, end_time: end });
+    onAdded();
+  }
+
+  if (courses.length === 0) return null;
+
+  return (
+    <form onSubmit={submit} className="card" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <select value={courseId} onChange={(e) => setCourseId(e.target.value)}>
+        <option value="">Choose a course...</option>
+        {courses.map((c) => (
+          <option key={c.id} value={c.id}>{c.code}</option>
+        ))}
+      </select>
+      <select value={day} onChange={(e) => setDay(e.target.value)}>
+        {DAY_OPTIONS.map((d, i) => (
+          <option key={i} value={i}>{d}</option>
+        ))}
+      </select>
+      <input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+      <span style={{ color: "var(--text-muted)" }}>–</span>
+      <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+      <button className="btn primary" type="submit">Add class slot</button>
+    </form>
   );
 }
 
 function SlotEditor({
   slot,
   onSave,
+  onDelete,
   justSaved,
 }: {
   slot: WeekDay["slots"][number];
   onSave: (id: number, start: string, end: string) => void;
+  onDelete: (id: number) => void;
   justSaved: boolean;
 }) {
   const [start, setStart] = useState(slot.start_time.slice(0, 5));
@@ -77,6 +263,9 @@ function SlotEditor({
         <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
         <button className="btn primary" onClick={() => onSave(slot.slot_id, start, end)}>
           {justSaved ? "Saved" : "Save"}
+        </button>
+        <button className="btn" onClick={() => onDelete(slot.slot_id)}>
+          Remove
         </button>
       </div>
     </div>

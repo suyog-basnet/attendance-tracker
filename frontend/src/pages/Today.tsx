@@ -8,11 +8,13 @@ import {
   todayLocal,
   DAY_NAMES,
   CourseSlot,
+  MAX_EDITS_PER_DAY,
 } from "../api";
 
 interface AttendanceState {
   status: "present" | "absent" | null;
   percentage: number | null;
+  editCount: number;
 }
 
 export default function Today() {
@@ -43,9 +45,16 @@ export default function Today() {
           try {
             const summary = await getAttendanceSummary(s.course_id);
             const todayRecord = summary.records?.find((r) => r.date.slice(0, 10) === today);
-            return [s.course_id, { status: todayRecord?.status ?? null, percentage: summary.percentage }] as const;
+            return [
+              s.course_id,
+              {
+                status: todayRecord?.status ?? null,
+                percentage: summary.percentage,
+                editCount: todayRecord?.edit_count ?? 0,
+              },
+            ] as const;
           } catch {
-            return [s.course_id, { status: null, percentage: null }] as const;
+            return [s.course_id, { status: null, percentage: null, editCount: 0 }] as const;
           }
         })
       );
@@ -67,16 +76,36 @@ export default function Today() {
 
   async function handleMark(course_id: number, status: "present" | "absent") {
     const today = todayLocal();
-    await markAttendance(course_id, today, status);
-    const summary = await getAttendanceSummary(course_id);
-    setAttendance((prev) => ({ ...prev, [course_id]: { status, percentage: summary.percentage } }));
+    try {
+      await markAttendance(course_id, today, status);
+      const summary = await getAttendanceSummary(course_id);
+      const todayRecord = summary.records?.find((r) => r.date.slice(0, 10) === today);
+      setAttendance((prev) => ({
+        ...prev,
+        [course_id]: { status, percentage: summary.percentage, editCount: todayRecord?.edit_count ?? 0 },
+      }));
+    } catch (err: any) {
+      window.alert(err.message?.includes("409") || err.message?.includes("Locked")
+        ? "Already changed twice today — locked until tomorrow."
+        : `Couldn't update attendance: ${err.message}`);
+    }
   }
 
   async function handleReset(course_id: number) {
     const today = todayLocal();
-    await resetAttendance(course_id, today);
-    const summary = await getAttendanceSummary(course_id);
-    setAttendance((prev) => ({ ...prev, [course_id]: { status: null, percentage: summary.percentage } }));
+    try {
+      await resetAttendance(course_id, today);
+      const summary = await getAttendanceSummary(course_id);
+      const todayRecord = summary.records?.find((r) => r.date.slice(0, 10) === today);
+      setAttendance((prev) => ({
+        ...prev,
+        [course_id]: { status: null, percentage: summary.percentage, editCount: todayRecord?.edit_count ?? prev[course_id]?.editCount ?? 0 },
+      }));
+    } catch (err: any) {
+      window.alert(err.message?.includes("409") || err.message?.includes("Locked")
+        ? "Already changed twice today — locked until tomorrow."
+        : `Couldn't reset attendance: ${err.message}`);
+    }
   }
 
   if (loading) return <p className="page-subtitle">Loading...</p>;
@@ -111,7 +140,9 @@ export default function Today() {
         </div>
       ) : (
         slots.map((slot) => {
-          const state = attendance[slot.course_id] ?? { status: null, percentage: null };
+          const state = attendance[slot.course_id] ?? { status: null, percentage: null, editCount: 0 };
+          const locked = state.editCount >= MAX_EDITS_PER_DAY;
+          const remaining = Math.max(0, MAX_EDITS_PER_DAY - state.editCount);
           return (
             <div className="card" key={slot.slot_id}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -128,22 +159,34 @@ export default function Today() {
                   <span className="pill">{state.percentage.toFixed(0)}% attended</span>
                 )}
               </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
                 <button
                   className={"btn" + (state.status === "present" ? " active-present" : "")}
                   onClick={() => handleMark(slot.course_id, "present")}
+                  disabled={locked}
+                  style={locked ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
                 >
                   Present
                 </button>
                 <button
                   className={"btn" + (state.status === "absent" ? " active-absent" : "")}
                   onClick={() => handleMark(slot.course_id, "absent")}
+                  disabled={locked}
+                  style={locked ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
                 >
                   Absent
                 </button>
-                <button className="btn" onClick={() => handleReset(slot.course_id)}>
+                <button
+                  className="btn"
+                  onClick={() => handleReset(slot.course_id)}
+                  disabled={locked}
+                  style={locked ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
+                >
                   Reset
                 </button>
+                <span style={{ fontSize: 12, color: "var(--text-dim)", marginLeft: 4 }}>
+                  {locked ? "🔒 Locked for today" : `${remaining} change${remaining === 1 ? "" : "s"} left today`}
+                </span>
               </div>
             </div>
           );

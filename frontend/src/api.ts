@@ -47,8 +47,11 @@ export interface AttendanceRecord {
   id: number;
   course_id: number;
   date: string;
-  status: "present" | "absent";
+  status: "present" | "absent" | null;
+  edit_count: number;
 }
+
+export const MAX_EDITS_PER_DAY = 2;
 
 export interface AttendanceSummary {
   present: number;
@@ -56,6 +59,45 @@ export interface AttendanceSummary {
   percentage: number | null;
   records?: AttendanceRecord[];
 }
+
+export interface Course {
+  id: number;
+  code: string;
+  name: string;
+  instructor: string;
+  room: string | null;
+}
+
+export interface NextClass {
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+}
+
+export interface Semester {
+  id: number;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export const getSemesters = () => request<Semester[]>("/semesters");
+export const createSemester = (name: string) =>
+  request<Semester>("/semesters", { method: "POST", body: JSON.stringify({ name }) });
+export const activateSemester = (id: number) =>
+  request<Semester>(`/semesters/${id}/activate`, { method: "PATCH" });
+
+export const createCourse = (body: { code: string; name: string; instructor: string; room?: string }) =>
+  request<Course>("/courses", { method: "POST", body: JSON.stringify(body) });
+export const deleteCourse = (id: number) => request(`/courses/${id}`, { method: "DELETE" });
+
+export const createSlot = (body: { course_id: number; day_of_week: number; start_time: string; end_time: string }) =>
+  request("/schedule", { method: "POST", body: JSON.stringify(body) });
+export const deleteSlot = (id: number) => request(`/schedule/${id}`, { method: "DELETE" });
+
+export const getCourses = () => request<Course[]>("/courses");
+export const getNextClass = (course_id: number) =>
+  request<{ next: NextClass | null }>(`/courses/${course_id}/next-class`);
 
 export interface Assignment {
   id: number;

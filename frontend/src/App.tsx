@@ -2,13 +2,17 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import Today from "./pages/Today";
 import Week from "./pages/Week";
 import CourseDetail from "./pages/CourseDetail";
+import Courses from "./pages/Courses";
 import Assignments from "./pages/Assignments";
+import Stats from "./pages/Stats";
 import Settings from "./pages/Settings";
 
 const links = [
   { to: "/", label: "Today" },
   { to: "/week", label: "Week" },
+  { to: "/courses", label: "Courses" },
   { to: "/assignments", label: "Assignments" },
+  { to: "/stats", label: "Stats" },
   { to: "/settings", label: "Settings" },
 ];
 
@@ -32,8 +36,10 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Today />} />
           <Route path="/week" element={<Week />} />
+          <Route path="/courses" element={<Courses />} />
           <Route path="/course/:id" element={<CourseDetail />} />
           <Route path="/assignments" element={<Assignments />} />
+          <Route path="/stats" element={<Stats />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>

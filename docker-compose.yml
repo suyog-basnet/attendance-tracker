@@ -1,16 +1,14 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: ku_tracker_db
+    container_name: 7th_sem_tracker
     restart: unless-stopped
     environment:
-      POSTGRES_USER: kutracker
-      POSTGRES_PASSWORD: kutracker_secret
-      POSTGRES_DB: ku_tracker
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql

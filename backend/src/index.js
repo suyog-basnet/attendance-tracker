@@ -6,6 +6,8 @@ const scheduleRoutes    = require('./routes/schedule');
 const attendanceRoutes  = require('./routes/attendance');
 const assignmentRoutes  = require('./routes/assignments');
 const pushTokenRoutes   = require('./routes/pushTokens');
+const courseRoutes      = require('./routes/courses');
+const semesterRoutes    = require('./routes/semesters');
 const { startNotificationJob } = require('./jobs/notificationJob');
 
 const app = express();
@@ -20,6 +22,8 @@ app.use('/schedule',    scheduleRoutes);
 app.use('/attendance',  attendanceRoutes);
 app.use('/assignments', assignmentRoutes);
 app.use('/push-tokens', pushTokenRoutes);
+app.use('/courses',     courseRoutes);
+app.use('/semesters',   semesterRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', time: new Date() }));

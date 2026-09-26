@@ -5,15 +5,34 @@
 -- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ─────────────────────────────────────────
+-- 0. SEMESTERS
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS semesters (
+  id         SERIAL PRIMARY KEY,
+  name       VARCHAR(100) NOT NULL,
+  is_active  BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Only one semester can be active at a time. Enforced with a partial unique
+-- index rather than application logic alone, so it holds even under races.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_semester
+  ON semesters ((is_active)) WHERE is_active = TRUE;
+
+-- ─────────────────────────────────────────
 -- 1. COURSES
 -- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS courses (
-  id         SERIAL PRIMARY KEY,
-  code       VARCHAR(20)  NOT NULL UNIQUE,
-  name       VARCHAR(120) NOT NULL,
-  instructor VARCHAR(100) NOT NULL,
-  room       VARCHAR(30)
+  id           SERIAL PRIMARY KEY,
+  code         VARCHAR(20)  NOT NULL,
+  name         VARCHAR(120) NOT NULL,
+  instructor   VARCHAR(100) NOT NULL,
+  room         VARCHAR(30),
+  semester_id  INTEGER REFERENCES semesters(id) ON DELETE CASCADE,
+  UNIQUE (code, semester_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_courses_semester ON courses(semester_id);
 
 -- ─────────────────────────────────────────
 -- 2. SCHEDULE SLOTS
@@ -37,7 +56,8 @@ CREATE TABLE IF NOT EXISTS attendance_records (
   id         SERIAL PRIMARY KEY,
   course_id  INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
   date       DATE    NOT NULL,
-  status     VARCHAR(10) NOT NULL CHECK (status IN ('present', 'absent')),
+  status     VARCHAR(10) CHECK (status IN ('present', 'absent')), -- NULL = reset/unmarked
+  edit_count SMALLINT NOT NULL DEFAULT 0, -- caps how many times this day's state can change
   UNIQUE (course_id, date)
 );
 
