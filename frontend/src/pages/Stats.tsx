@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getCourses, getAssignments, getAttendanceSummary, Course, Assignment, AttendanceSummary } from "../api";
-
-const AT_RISK_THRESHOLD = 75; // flag subjects within this many points of falling below 75%
+import { getCourses, getAssignments, getAttendanceSummary, getSemesters, Course, Assignment, AttendanceSummary } from "../api";
 
 interface Row {
   course: Course;
@@ -14,11 +12,14 @@ export default function Stats() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [target, setTarget] = useState(80);
 
   useEffect(() => {
     (async () => {
       try {
-        const [courses, assignmentList] = await Promise.all([getCourses(), getAssignments()]);
+        const [courses, assignmentList, semesters] = await Promise.all([getCourses(), getAssignments(), getSemesters()]);
+        const active = semesters.find((s) => s.is_active);
+        if (active) setTarget(active.attendance_target);
         const data = await Promise.all(
           courses.map(async (course) => ({
             course,
@@ -42,7 +43,7 @@ export default function Stats() {
   const overallPct = totalPresent + totalAbsent > 0 ? (totalPresent / (totalPresent + totalAbsent)) * 100 : null;
 
   const atRisk = rows
-    .filter((r) => r.summary?.percentage !== null && r.summary!.percentage! < AT_RISK_THRESHOLD + 10)
+    .filter((r) => r.summary?.percentage !== null && r.summary!.percentage! < target + 10)
     .sort((a, b) => (a.summary!.percentage! ?? 0) - (b.summary!.percentage! ?? 0));
 
   const pendingAssignments = assignments.filter((a) => !a.is_done);
@@ -76,13 +77,13 @@ export default function Stats() {
         </div>
       </div>
 
-      <h3 style={{ fontSize: 16, marginBottom: 8 }}>Subjects closest to falling below 75%</h3>
+      <h3 style={{ fontSize: 16, marginBottom: 8 }}>Subjects closest to falling below {target}%</h3>
       {atRisk.length === 0 ? (
         <p className="page-subtitle">Nothing close to the line — you're in good shape.</p>
       ) : (
         atRisk.map((r) => {
           const pct = r.summary!.percentage!;
-          const below = pct < 75;
+          const below = pct < target;
           return (
             <Link to={`/course/${r.course.id}`} key={r.course.id}>
               <div

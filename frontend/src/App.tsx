@@ -5,6 +5,7 @@ import CourseDetail from "./pages/CourseDetail";
 import Courses from "./pages/Courses";
 import Assignments from "./pages/Assignments";
 import Stats from "./pages/Stats";
+import Exams from "./pages/Exams";
 import Settings from "./pages/Settings";
 
 const links = [
@@ -12,6 +13,7 @@ const links = [
   { to: "/week", label: "Week" },
   { to: "/courses", label: "Courses" },
   { to: "/assignments", label: "Assignments" },
+  { to: "/exams", label: "Exams" },
   { to: "/stats", label: "Stats" },
   { to: "/settings", label: "Settings" },
 ];
@@ -39,6 +41,7 @@ export default function App() {
           <Route path="/courses" element={<Courses />} />
           <Route path="/course/:id" element={<CourseDetail />} />
           <Route path="/assignments" element={<Assignments />} />
+          <Route path="/exams" element={<Exams />} />
           <Route path="/stats" element={<Stats />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

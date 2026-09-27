@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getAttendanceSummary, getCanMiss, AttendanceSummary } from "../api";
+import { getAttendanceSummary, getCanMiss, AttendanceSummary, CanMissResult } from "../api";
 
 function exportCsv(courseId: number, records: { date: string; status: string | null }[]) {
   const rows = records.filter((r) => r.status !== null);
@@ -19,7 +19,7 @@ export default function CourseDetail() {
   const { id } = useParams();
   const courseId = Number(id);
   const [summary, setSummary] = useState<AttendanceSummary | null>(null);
-  const [canMiss, setCanMiss] = useState<number | null>(null);
+  const [canMiss, setCanMiss] = useState<CanMissResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,10 +66,10 @@ export default function CourseDetail() {
           {canMiss !== null && (
             <div className="card">
               <div style={{ fontWeight: 700 }}>
-                You can miss {canMiss} more class{canMiss === 1 ? "" : "es"}
+                You can miss {canMiss.can_miss} more class{canMiss.can_miss === 1 ? "" : "es"}
               </div>
               <div style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>
-                and stay at or above 75% attendance
+                and stay at or above {canMiss.target}% attendance
               </div>
             </div>
           )}

@@ -78,6 +78,7 @@ export interface Semester {
   id: number;
   name: string;
   is_active: boolean;
+  attendance_target: number;
   created_at: string;
 }
 
@@ -86,6 +87,11 @@ export const createSemester = (name: string) =>
   request<Semester>("/semesters", { method: "POST", body: JSON.stringify({ name }) });
 export const activateSemester = (id: number) =>
   request<Semester>(`/semesters/${id}/activate`, { method: "PATCH" });
+export const updateSemesterTarget = (id: number, attendance_target: number) =>
+  request<Semester>(`/semesters/${id}/target`, {
+    method: "PATCH",
+    body: JSON.stringify({ attendance_target }),
+  });
 
 export const createCourse = (body: { code: string; name: string; instructor: string; room?: string }) =>
   request<Course>("/courses", { method: "POST", body: JSON.stringify(body) });
@@ -123,22 +129,28 @@ export const resetAttendance = (course_id: number, date: string) =>
 export const getAttendanceSummary = (course_id: number) =>
   request<AttendanceSummary>(`/attendance/${course_id}/summary`);
 
-// Client-side fallback if the backend has no dedicated can-miss endpoint.
-// classes_can_miss = floor((present / 0.75) - (present + absent)), floored at 0
-export function computeCanMiss(present: number, absent: number): number {
+// Client-side fallback if the backend can-miss endpoint is unreachable.
+// Default target 80% -- the backend's real answer uses the semester's
+// actual configured target and should be preferred whenever available.
+export function computeCanMiss(present: number, absent: number, targetPct = 80): number {
   const total = present + absent;
   if (total === 0) return 0;
-  const canMiss = Math.floor(present / 0.75 - total);
+  const canMiss = Math.floor(present / (targetPct / 100) - total);
   return Math.max(0, canMiss);
 }
 
-export async function getCanMiss(course_id: number): Promise<number> {
+export interface CanMissResult {
+  can_miss: number;
+  target: number;
+}
+
+export async function getCanMiss(course_id: number): Promise<CanMissResult> {
   try {
-    const res = await request<{ can_miss: number }>(`/attendance/${course_id}/can-miss`);
-    return res.can_miss;
+    const res = await request<{ can_miss: number; target: number }>(`/attendance/${course_id}/can-miss`);
+    return { can_miss: res.can_miss, target: res.target };
   } catch {
     const summary = await getAttendanceSummary(course_id);
-    return computeCanMiss(summary.present, summary.absent);
+    return { can_miss: computeCanMiss(summary.present, summary.absent), target: 80 };
   }
 }
 
@@ -160,5 +172,34 @@ export const deleteAssignment = (id: number) =>
 export function todayLocal(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kathmandu" });
 }
+
+// ---------- Exams ----------
+export interface Exam {
+  id: number;
+  course_id: number;
+  title: string;
+  exam_date: string;
+  full_marks: string | null;
+  obtained_marks: string | null;
+  code?: string;
+  course_name?: string;
+}
+
+export const getExams = () => request<Exam[]>("/exams");
+export const getUpcomingExams = () => request<Exam[]>("/exams/upcoming");
+
+export const createExam = (body: {
+  course_id: number;
+  title: string;
+  exam_date: string;
+  full_marks?: number | null;
+}) => request<Exam>("/exams", { method: "POST", body: JSON.stringify(body) });
+
+export const updateExam = (
+  id: number,
+  body: { title?: string; exam_date?: string; full_marks?: number | null; obtained_marks?: number | null }
+) => request<Exam>(`/exams/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+
+export const deleteExam = (id: number) => request(`/exams/${id}`, { method: "DELETE" });
 
 export const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
