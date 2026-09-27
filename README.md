@@ -8,7 +8,7 @@ mobile app, no Expo, no Xcode.
 
 ```
 backend/    — Node.js + Express + Postgres API
-web/        — React (Vite + TypeScript) web app
+frontend/        — React (Vite + TypeScript) web app
 docker-compose.yml — Postgres, run this first
 ```
 
@@ -27,7 +27,7 @@ npm install
 npm run dev
 
 # 3. In a second terminal, start the web app
-cd web
+cd frontend
 npm install
 npm run dev
 ```
@@ -39,7 +39,7 @@ Open the URL Vite prints (usually `http://localhost:5173`).
 ```bash
 docker ps                     # confirm ku_tracker_db is "Up" — if not: docker-compose up -d
 cd backend && npm run dev     # in one terminal
-cd web && npm run dev         # in another terminal
+cd frontend && npm run dev         # in another terminal
 ```
 
 ## Notes
