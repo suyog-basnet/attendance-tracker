@@ -123,10 +123,21 @@ router.get('/:course_id/summary', async (req, res, next) => {
 });
 
 // ─── GET /attendance/:course_id/can-miss ─────────────────────────────────────
-// Returns how many more classes can be missed while staying >= 75%
+// Returns how many more classes can be missed while staying at/above the
+// active semester's attendance target (defaults to 80%, editable in Settings).
 router.get('/:course_id/can-miss', async (req, res, next) => {
   try {
     const { course_id } = req.params;
+
+    const { rows: targetRows } = await db.query(
+      `SELECT sem.attendance_target
+       FROM courses c
+       JOIN semesters sem ON sem.id = c.semester_id
+       WHERE c.id = $1`,
+      [course_id]
+    );
+    const target = targetRows[0]?.attendance_target ?? 80;
+    const t = target / 100;
 
     const { rows } = await db.query(
       `SELECT
@@ -141,11 +152,10 @@ router.get('/:course_id/can-miss', async (req, res, next) => {
     const absent  = parseInt(rows[0].absent,  10);
     const total   = present + absent;
 
-    // Formula: present / (total + x) >= 0.75  →  x <= (present - 0.75*total) / 0.75
-    // x = floor((present - 0.75 * total) / 0.75)  → simplifies to floor((4*present - 3*total) / 3)
+    // present / (total + x) >= t  →  x <= present/t - total
     const canMiss = total === 0
       ? null
-      : Math.max(0, Math.floor((4 * present - 3 * total) / 3));
+      : Math.max(0, Math.floor(present / t - total));
 
     res.json({
       course_id: parseInt(course_id, 10),
@@ -153,6 +163,7 @@ router.get('/:course_id/can-miss', async (req, res, next) => {
       absent,
       total,
       percentage: total > 0 ? Math.round((present / total) * 100) : null,
+      target,
       can_miss: canMiss,
     });
   } catch (err) {

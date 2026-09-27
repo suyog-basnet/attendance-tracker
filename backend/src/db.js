@@ -1,5 +1,11 @@
 require('dotenv').config();
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// Without this, node-postgres parses DATE columns into JS Date objects,
+// which get interpreted in the server process's local timezone and can
+// come out shifted by a day once serialized to JSON. Returning the raw
+// 'YYYY-MM-DD' string instead avoids that entirely.
+types.setTypeParser(1082, (val) => val); // 1082 = Postgres DATE oid
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

@@ -6,7 +6,7 @@ const db = require('../db');
 router.get('/', async (_req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, name, is_active, created_at
+      `SELECT id, name, is_active, attendance_target, created_at
        FROM semesters
        ORDER BY is_active DESC, created_at DESC`
     );
@@ -58,6 +58,25 @@ router.patch('/:id/activate', async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+});
+
+// ─── PATCH /semesters/:id/target — set the attendance target (e.g. 80) ───────
+router.patch('/:id/target', async (req, res, next) => {
+  try {
+    const { attendance_target } = req.body;
+    const target = Number(attendance_target);
+    if (!target || target < 1 || target > 100) {
+      return res.status(400).json({ error: 'attendance_target must be a number between 1 and 100' });
+    }
+    const { rows } = await db.query(
+      `UPDATE semesters SET attendance_target = $1 WHERE id = $2 RETURNING *`,
+      [target, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Semester not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
   }
 });
 

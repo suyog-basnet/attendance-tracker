@@ -8,10 +8,11 @@
 -- 0. SEMESTERS
 -- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS semesters (
-  id         SERIAL PRIMARY KEY,
-  name       VARCHAR(100) NOT NULL,
-  is_active  BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                 SERIAL PRIMARY KEY,
+  name               VARCHAR(100) NOT NULL,
+  is_active          BOOLEAN NOT NULL DEFAULT FALSE,
+  attendance_target  SMALLINT NOT NULL DEFAULT 80 CHECK (attendance_target BETWEEN 1 AND 100),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Only one semester can be active at a time. Enforced with a partial unique
@@ -86,3 +87,21 @@ CREATE TABLE IF NOT EXISTS push_tokens (
   expo_push_token  VARCHAR(200) NOT NULL UNIQUE,
   created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+-- ─────────────────────────────────────────
+-- 6. EXAMS
+-- Internal exams/tests, with optional marks once graded.
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS exams (
+  id              SERIAL PRIMARY KEY,
+  course_id       INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  title           VARCHAR(100) NOT NULL, -- e.g. "First Internal", "Final"
+  exam_date       DATE NOT NULL,
+  full_marks      NUMERIC(6,2),
+  obtained_marks  NUMERIC(6,2),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (obtained_marks IS NULL OR full_marks IS NULL OR obtained_marks <= full_marks)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exams_course ON exams(course_id);
+CREATE INDEX IF NOT EXISTS idx_exams_date   ON exams(exam_date);
