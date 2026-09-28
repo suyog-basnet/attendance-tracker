@@ -61,12 +61,15 @@ a {
 
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
   width: 220px;
   flex-shrink: 0;
+  height: 100vh;
+  overflow-y: auto;
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
   padding: 24px 16px;
@@ -103,6 +106,8 @@ a {
 
 .main {
   flex: 1;
+  height: 100vh;
+  overflow-y: auto;
   padding: 32px 40px;
   max-width: 900px;
 }

@@ -18,12 +18,12 @@ WHERE NOT EXISTS (SELECT 1 FROM semesters);
 INSERT INTO courses (code, name, instructor, room, semester_id)
 SELECT v.code, v.name, v.instructor, v.room, s.id
 FROM (VALUES
-  ('COMP 401', 'Theory of Computation',            'Prof. Dr. Rabindra Bista',    '9-304'),
-  ('COMP 407', 'Computer Graphics',                'Mr. Santosh Shaha',           '9-404'),
-  ('COMP 409', 'Software Engineering',              'Mr. Sushil Nepal',            '9-304'),
-  ('COMP 472', 'Database Management Systems',       'Dr. Rajani Chulyadyo',        '9-304'),
-  ('COMP 488', 'Neural Network and Deep Learning',   'Prof. Dr. Bal Krishna Bal',   NULL),
-  ('MGTS 403', 'Engineering Economics',              'Mr. Bishal Gurung',           '9-304')
+  ('COMP 401', 'Software Engineering',              'Prof. Dr. Rabindra Bista',    '9-304'),
+  ('COMP 407', 'Digital Signal Processing',          'Mr. Santosh Shaha',           '9-404'),
+  ('COMP 409', 'Compiler Design',                    'Mr. Sushil Nepal',            '9-304'),
+  ('COMP 472', 'Artificial Intelligence',            'Dr. Rajani Chulyadyo',        '9-304'),
+  ('COMP 488', 'Neural Network and Deep Learning',   'Dr. Prakash Poudyal',         NULL),
+  ('MGTS 403', 'Engineering Management',             'Mr. Bishal Gurung',           '9-304')
 ) AS v(code, name, instructor, room)
 CROSS JOIN (SELECT id FROM semesters WHERE is_active = TRUE LIMIT 1) AS s
 ON CONFLICT (code, semester_id) DO NOTHING;

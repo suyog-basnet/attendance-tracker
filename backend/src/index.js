@@ -9,7 +9,9 @@ const pushTokenRoutes   = require('./routes/pushTokens');
 const courseRoutes      = require('./routes/courses');
 const semesterRoutes    = require('./routes/semesters');
 const examRoutes        = require('./routes/exams');
-const { startNotificationJob } = require('./jobs/notificationJob');
+const pushRoutes        = require('./routes/push');
+const materialRoutes    = require('./routes/materials');
+const { startWebPushJobs } = require('./jobs/webPushJobs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +28,8 @@ app.use('/push-tokens', pushTokenRoutes);
 app.use('/courses',     courseRoutes);
 app.use('/semesters',   semesterRoutes);
 app.use('/exams',       examRoutes);
+app.use('/push',        pushRoutes);
+app.use('/materials',   materialRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', time: new Date() }));
@@ -42,7 +46,7 @@ app.use((err, _req, res, _next) => {
 // ─── Start ───────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✅ KU Tracker backend running on http://localhost:${PORT}`);
-  startNotificationJob();
+  startWebPushJobs();
 });
 
 module.exports = app;

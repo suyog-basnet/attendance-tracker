@@ -66,6 +66,7 @@ export interface Course {
   name: string;
   instructor: string;
   room: string | null;
+  credits: number;
 }
 
 export interface NextClass {
@@ -93,7 +94,7 @@ export const updateSemesterTarget = (id: number, attendance_target: number) =>
     body: JSON.stringify({ attendance_target }),
   });
 
-export const createCourse = (body: { code: string; name: string; instructor: string; room?: string }) =>
+export const createCourse = (body: { code: string; name: string; instructor: string; room?: string; credits?: number }) =>
   request<Course>("/courses", { method: "POST", body: JSON.stringify(body) });
 export const deleteCourse = (id: number) => request(`/courses/${id}`, { method: "DELETE" });
 
@@ -111,6 +112,8 @@ export interface Assignment {
   title: string;
   due_date: string | null;
   is_done: boolean;
+  course_code?: string | null;
+  course_name?: string | null;
 }
 
 // ---------- Schedule ----------
@@ -203,3 +206,49 @@ export const updateExam = (
 export const deleteExam = (id: number) => request(`/exams/${id}`, { method: "DELETE" });
 
 export const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+// ---------- Push notifications ----------
+export const getVapidPublicKey = () =>
+  request<{ publicKey: string | null; configured: boolean }>("/push/vapid-public-key");
+
+export const subscribePush = (subscription: PushSubscriptionJSON) =>
+  request("/push/subscribe", { method: "POST", body: JSON.stringify(subscription) });
+
+export const unsubscribePush = (endpoint: string) =>
+  request("/push/subscribe", { method: "DELETE", body: JSON.stringify({ endpoint }) });
+
+// ---------- Course materials (slides / notes) ----------
+export interface Material {
+  id: number;
+  course_id: number;
+  kind: "file" | "note";
+  title: string;
+  note_text: string | null;
+  original_name: string | null;
+  mime_type: string | null;
+  size_bytes: string | null; // BIGINT comes back as a string
+  created_at: string;
+}
+
+export const getMaterials = (course_id?: number) =>
+  request<Material[]>(`/materials${course_id ? `?course_id=${course_id}` : ""}`);
+
+export const createNote = (body: { course_id: number; title: string; note_text: string }) =>
+  request<Material>("/materials/note", { method: "POST", body: JSON.stringify(body) });
+
+// File uploads are multipart, so this can't go through request() (which forces a JSON content type).
+export async function uploadMaterialFile(course_id: number, title: string, file: File): Promise<Material> {
+  const form = new FormData();
+  form.append("course_id", String(course_id));
+  if (title.trim()) form.append("title", title.trim());
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/materials/file`, { method: "POST", body: form });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export const materialDownloadUrl = (id: number) => `${API_BASE}/materials/${id}/download`;
+export const deleteMaterial = (id: number) => request(`/materials/${id}`, { method: "DELETE" });

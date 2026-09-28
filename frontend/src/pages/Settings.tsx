@@ -6,6 +6,7 @@ import {
   getSemesters,
   createSemester,
   activateSemester,
+  updateSemesterTarget,
   getCourses,
   createCourse,
   deleteCourse,
@@ -14,6 +15,7 @@ import {
   Semester,
   Course,
 } from "../api";
+import { enableNotifications, disableNotifications, getSubscriptionStatus, isPushSupported } from "../notifications";
 
 const DAY_OPTIONS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
@@ -25,6 +27,35 @@ export default function Settings() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
   const [newSemesterName, setNewSemesterName] = useState("");
+  const [notifStatus, setNotifStatus] = useState<"unknown" | "on" | "off">("unknown");
+  const [notifBusy, setNotifBusy] = useState(false);
+  const [notifError, setNotifError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getSubscriptionStatus().then((sub) => setNotifStatus(sub ? "on" : "off"));
+  }, []);
+
+  async function handleToggleNotifications() {
+    setNotifBusy(true);
+    setNotifError(null);
+    try {
+      if (notifStatus === "on") {
+        await disableNotifications();
+        setNotifStatus("off");
+      } else {
+        const result = await enableNotifications();
+        if (result.ok) {
+          setNotifStatus("on");
+        } else {
+          setNotifError(result.reason ?? "Couldn't enable notifications.");
+        }
+      }
+    } catch (err: any) {
+      setNotifError(err.message ?? "Something went wrong.");
+    } finally {
+      setNotifBusy(false);
+    }
+  }
 
   function load() {
     setLoading(true);
@@ -64,6 +95,13 @@ export default function Settings() {
     load();
   }
 
+  async function handleSaveTarget(id: number, target: string) {
+    const n = Number(target);
+    if (!n || n < 1 || n > 100) return;
+    await updateSemesterTarget(id, n);
+    load();
+  }
+
   if (loading) return <p className="page-subtitle">Loading...</p>;
 
   const activeSemester = semesters.find((s) => s.is_active);
@@ -77,6 +115,37 @@ export default function Settings() {
         <div className="error-banner">
           <span>⚠️</span>
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* ───────── Notifications ───────── */}
+      <h3 style={{ fontSize: 16, marginBottom: 8 }}>Notifications</h3>
+      {!isPushSupported() ? (
+        <p style={{ color: "var(--text-dim)", fontSize: 13, marginBottom: 24 }}>
+          This browser doesn't support push notifications.
+        </p>
+      ) : (
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 700 }}>
+                {notifStatus === "on" ? "Notifications are on" : "Get reminders in this browser"}
+              </div>
+              <div style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 2 }}>
+                Tomorrow's schedule at 8 PM, assignment reminders at 8 AM
+              </div>
+            </div>
+            <button
+              className={"btn" + (notifStatus === "on" ? "" : " primary")}
+              onClick={handleToggleNotifications}
+              disabled={notifBusy || notifStatus === "unknown"}
+            >
+              {notifBusy ? "..." : notifStatus === "on" ? "Turn off" : "Turn on"}
+            </button>
+          </div>
+          {notifError && (
+            <div style={{ color: "var(--overdue-text)", fontSize: 13, marginTop: 8 }}>{notifError}</div>
+          )}
         </div>
       )}
 
@@ -110,11 +179,27 @@ export default function Settings() {
           Create
         </button>
       </form>
-      <p style={{ color: "var(--text-dim)", fontSize: 12, marginBottom: 24 }}>
+      <p style={{ color: "var(--text-dim)", fontSize: 12, marginBottom: 16 }}>
         Creating a semester doesn't switch to it automatically — add its courses first
         (below), then switch when you're ready. Switching semesters doesn't delete
         anything; past semesters' courses, attendance, and assignments stay intact.
       </p>
+
+      {activeSemester && (
+        <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>Attendance target</div>
+            <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
+              Used for "classes you can miss" calculations in {activeSemester.name}
+            </div>
+          </div>
+          <AttendanceTargetEditor
+            semesterId={activeSemester.id}
+            current={activeSemester.attendance_target}
+            onSave={handleSaveTarget}
+          />
+        </div>
+      )}
 
       {/* ───────── Courses in the active semester ───────── */}
       <h3 style={{ fontSize: 16, marginBottom: 8 }}>
@@ -268,6 +353,35 @@ function SlotEditor({
           Remove
         </button>
       </div>
+    </div>
+  );
+}
+
+function AttendanceTargetEditor({
+  semesterId,
+  current,
+  onSave,
+}: {
+  semesterId: number;
+  current: number;
+  onSave: (id: number, value: string) => void;
+}) {
+  const [value, setValue] = useState(String(current));
+
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <input
+        type="number"
+        min={1}
+        max={100}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        style={{ width: 70 }}
+      />
+      <span style={{ color: "var(--text-muted)" }}>%</span>
+      <button className="btn primary" onClick={() => onSave(semesterId, value)}>
+        Save
+      </button>
     </div>
   );
 }

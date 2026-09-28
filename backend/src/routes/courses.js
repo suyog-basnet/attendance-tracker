@@ -16,7 +16,7 @@ router.get('/', async (req, res, next) => {
     if (!semesterId) return res.json([]); // no semester set up yet
 
     const { rows } = await db.query(
-      `SELECT id, code, name, instructor, room, semester_id
+      `SELECT id, code, name, instructor, room, credits, semester_id
        FROM courses WHERE semester_id = $1 ORDER BY code`,
       [semesterId]
     );
@@ -29,7 +29,7 @@ router.get('/', async (req, res, next) => {
 // ─── POST /courses — add a course to the active semester (or a given one) ─────
 router.post('/', async (req, res, next) => {
   try {
-    const { code, name, instructor, room, semester_id } = req.body;
+    const { code, name, instructor, room, credits, semester_id } = req.body;
     if (!code || !name || !instructor) {
       return res.status(400).json({ error: 'code, name, and instructor are required' });
     }
@@ -39,11 +39,11 @@ router.post('/', async (req, res, next) => {
     }
 
     const { rows } = await db.query(
-      `INSERT INTO courses (code, name, instructor, room, semester_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO courses (code, name, instructor, room, credits, semester_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (code, semester_id) DO NOTHING
        RETURNING *`,
-      [code.trim(), name.trim(), instructor.trim(), room?.trim() || null, targetSemester]
+      [code.trim(), name.trim(), instructor.trim(), room?.trim() || null, Number(credits) || 3, targetSemester]
     );
 
     if (!rows.length) {

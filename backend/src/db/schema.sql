@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS courses (
   name         VARCHAR(120) NOT NULL,
   instructor   VARCHAR(100) NOT NULL,
   room         VARCHAR(30),
+  credits      SMALLINT NOT NULL DEFAULT 3 CHECK (credits BETWEEN 1 AND 10),
   semester_id  INTEGER REFERENCES semesters(id) ON DELETE CASCADE,
   UNIQUE (code, semester_id)
 );
@@ -105,3 +106,39 @@ CREATE TABLE IF NOT EXISTS exams (
 
 CREATE INDEX IF NOT EXISTS idx_exams_course ON exams(course_id);
 CREATE INDEX IF NOT EXISTS idx_exams_date   ON exams(exam_date);
+
+-- ─────────────────────────────────────────
+-- 7. PUSH SUBSCRIPTIONS (Web Push, browser-based)
+-- Distinct from the old push_tokens table above, which was for the
+-- (now removed) Expo mobile app and can be dropped later.
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id         SERIAL PRIMARY KEY,
+  endpoint   TEXT NOT NULL UNIQUE,
+  p256dh     TEXT NOT NULL,
+  auth       TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ─────────────────────────────────────────
+-- 8. COURSE MATERIALS (slides/files and quick notes, per subject)
+-- Files live on disk in backend/uploads/; only metadata is stored here.
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS course_materials (
+  id             SERIAL PRIMARY KEY,
+  course_id      INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  kind           VARCHAR(10) NOT NULL CHECK (kind IN ('file', 'note')),
+  title          VARCHAR(200) NOT NULL,
+  note_text      TEXT,
+  original_name  VARCHAR(255),
+  stored_name    VARCHAR(255),
+  mime_type      VARCHAR(150),
+  size_bytes     BIGINT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (
+    (kind = 'note' AND note_text IS NOT NULL) OR
+    (kind = 'file' AND stored_name IS NOT NULL)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_materials_course ON course_materials(course_id);
