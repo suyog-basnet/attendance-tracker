@@ -15,11 +15,13 @@ if (publicKey && privateKey) {
 // browser. Automatically removes subscriptions that are no longer valid
 // (410 Gone / 404 Not Found — the browser unsubscribed or the sub expired).
 async function sendToAll(payload) {
-  if (!publicKey || !privateKey) return { sent: 0, pruned: 0 };
+  if (!publicKey || !privateKey) return { sent: 0, pruned: 0, failed: 0, subscriptions: 0, errors: [] };
 
   const { rows: subs } = await db.query(`SELECT id, endpoint, p256dh, auth FROM push_subscriptions`);
   let sent = 0;
   let pruned = 0;
+  let failed = 0;
+  const errors = [];
 
   await Promise.all(
     subs.map(async (sub) => {
@@ -37,13 +39,15 @@ async function sendToAll(payload) {
           await db.query(`DELETE FROM push_subscriptions WHERE id = $1`, [sub.id]);
           pruned++;
         } else {
+          failed++;
+          if (errors.length < 3) errors.push(err.message);
           console.error('Push send failed:', err.statusCode, err.message);
         }
       }
     })
   );
 
-  return { sent, pruned };
+  return { sent, pruned, failed, subscriptions: subs.length, errors };
 }
 
 module.exports = { sendToAll, isConfigured: () => Boolean(publicKey && privateKey) };

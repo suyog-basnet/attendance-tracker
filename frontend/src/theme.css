@@ -179,6 +179,12 @@ a {
   color: #2b0a0a;
 }
 
+.btn.active-cancelled {
+  background: var(--warning);
+  border-color: var(--warning);
+  color: #2b1c02;
+}
+
 .btn.primary {
   background: var(--primary);
   border-color: var(--primary);

@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getAttendanceSummary, getCanMiss, AttendanceSummary, CanMissResult } from "../api";
 
-function exportCsv(courseId: number, records: { date: string; status: string | null }[]) {
+function exportCsv(courseId: number, records: { date: string; status: string | null; reason?: string | null }[]) {
   const rows = records.filter((r) => r.status !== null);
-  const header = "date,status";
-  const body = rows.map((r) => `${r.date.slice(0, 10)},${r.status}`).join("\n");
+  const header = "date,status,reason";
+  const body = rows
+    .map((r) => `${r.date.slice(0, 10)},${r.status === "cancelled" ? "not held" : r.status},"${(r.reason ?? "").replace(/"/g, '""')}"`)
+    .join("\n");
   const blob = new Blob([`${header}\n${body}`], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -60,6 +62,7 @@ export default function CourseDetail() {
             </div>
             <div style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>
               {summary.present} present · {summary.absent} absent
+              {summary.not_held ? ` · ${summary.not_held} not held (not counted)` : ""}
             </div>
           </div>
 
@@ -94,8 +97,14 @@ export default function CourseDetail() {
                   style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
                 >
                   <span>{r.date.slice(0, 10)}</span>
-                  <span className="pill" style={{ color: r.status === "present" ? "var(--present)" : "var(--absent)" }}>
-                    {r.status}
+                  <span
+                    className="pill"
+                    style={{
+                      color:
+                        r.status === "present" ? "var(--present)" : r.status === "cancelled" ? "var(--warning)" : "var(--absent)",
+                    }}
+                  >
+                    {r.status === "cancelled" ? `not held${r.reason ? ` · ${r.reason}` : ""}` : r.status}
                   </span>
                 </div>
               ))

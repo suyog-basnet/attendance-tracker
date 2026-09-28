@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS attendance_records (
   id         SERIAL PRIMARY KEY,
   course_id  INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
   date       DATE    NOT NULL,
-  status     VARCHAR(10) CHECK (status IN ('present', 'absent')), -- NULL = reset/unmarked
+  status     VARCHAR(10) CHECK (status IN ('present', 'absent', 'cancelled')), -- NULL = reset/unmarked; cancelled = class not held
+  reason     VARCHAR(100), -- why a class wasn't held (only set when status = 'cancelled')
   edit_count SMALLINT NOT NULL DEFAULT 0, -- caps how many times this day's state can change
   UNIQUE (course_id, date)
 );

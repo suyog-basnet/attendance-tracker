@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import MarksSummary from "../MarksSummary";
 import { getCourses, getAssignments, getAttendanceSummary, getSemesters, Course, Assignment, AttendanceSummary } from "../api";
 
 interface Row {
@@ -109,6 +110,10 @@ export default function Stats() {
           );
         })
       )}
+
+      <div style={{ marginTop: 24 }}>
+        <MarksSummary />
+      </div>
 
       <h3 style={{ fontSize: 16, margin: "24px 0 8px" }}>Pending assignments</h3>
       {pendingAssignments.length === 0 ? (

@@ -47,15 +47,20 @@ export interface AttendanceRecord {
   id: number;
   course_id: number;
   date: string;
-  status: "present" | "absent" | null;
+  status: "present" | "absent" | "cancelled" | null; // cancelled = class not held
+  reason?: string | null;
   edit_count: number;
 }
+
+// Why a class wasn't held. Free text is accepted by the backend; these are the quick picks.
+export const NOT_HELD_REASONS = ["Teacher absent", "Schedule conflict", "Holiday", "Other"];
 
 export const MAX_EDITS_PER_DAY = 2;
 
 export interface AttendanceSummary {
   present: number;
   absent: number;
+  not_held?: number;
   percentage: number | null;
   records?: AttendanceRecord[];
 }
@@ -123,8 +128,24 @@ export const patchSlot = (id: number, body: { start_time?: string; end_time?: st
   request(`/schedule/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 
 // ---------- Attendance ----------
-export const markAttendance = (course_id: number, date: string, status: "present" | "absent") =>
-  request("/attendance", { method: "POST", body: JSON.stringify({ course_id, date, status }) });
+export const markAttendance = (
+  course_id: number,
+  date: string,
+  status: "present" | "absent" | "cancelled",
+  reason?: string
+) => request("/attendance", { method: "POST", body: JSON.stringify({ course_id, date, status, reason }) });
+
+// Every marked class in the active semester between two dates (feeds the calendar).
+export interface AttendanceByDate {
+  date: string;
+  course_id: number;
+  status: "present" | "absent" | "cancelled";
+  reason: string | null;
+  code: string;
+  course_name: string;
+}
+export const getAttendanceByDate = (from: string, to: string) =>
+  request<AttendanceByDate[]>(`/attendance/by-date?from=${from}&to=${to}`);
 
 export const resetAttendance = (course_id: number, date: string) =>
   request("/attendance", { method: "DELETE", body: JSON.stringify({ course_id, date }) });
@@ -252,3 +273,16 @@ export async function uploadMaterialFile(course_id: number, title: string, file:
 
 export const materialDownloadUrl = (id: number) => `${API_BASE}/materials/${id}/download`;
 export const deleteMaterial = (id: number) => request(`/materials/${id}`, { method: "DELETE" });
+
+// Fire a notification on demand instead of waiting for 8 AM / 8 PM.
+export interface PushTestResult {
+  type: string;
+  sent?: number;
+  failed?: number;
+  subscriptions?: number;
+  errors?: string[];
+  skipped?: string;
+  preview?: string;
+}
+export const sendTestPush = (type: "ping" | "schedule" | "assignments") =>
+  request<PushTestResult>("/push/test", { method: "POST", body: JSON.stringify({ type }) });

@@ -60,3 +60,29 @@ export async function disableNotifications(): Promise<void> {
   await unsubscribePush(sub.endpoint);
   await sub.unsubscribe();
 }
+
+// Shows a notification straight from the browser, with no server or push
+// service involved. If this works, permissions and the service worker are fine
+// — so a failure of the server-side test points at the push service/network.
+export async function showLocalTestNotification(): Promise<{ ok: boolean; reason?: string }> {
+  if (!("serviceWorker" in navigator) || !("Notification" in window)) {
+    return { ok: false, reason: "This browser doesn't support notifications." };
+  }
+  if (Notification.permission === "default") {
+    await Notification.requestPermission();
+  }
+  if (Notification.permission !== "granted") {
+    return {
+      ok: false,
+      reason: "Notifications are blocked for this site. Click the lock icon next to the address bar and allow them.",
+    };
+  }
+  await navigator.serviceWorker.register("/sw.js");
+  const reg = await navigator.serviceWorker.ready;
+  await reg.showNotification("✅ KU Tracker test", {
+    body: "This one came from your browser, not the server.",
+    icon: "/icon-192.png",
+    tag: "local-test",
+  });
+  return { ok: true };
+}

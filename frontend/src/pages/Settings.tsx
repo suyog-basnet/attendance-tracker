@@ -11,11 +11,20 @@ import {
   createCourse,
   deleteCourse,
   createSlot,
+  sendTestPush,
+  PushTestResult,
   WeekDay,
   Semester,
   Course,
 } from "../api";
-import { enableNotifications, disableNotifications, getSubscriptionStatus, isPushSupported } from "../notifications";
+import InstallPrompt from "../InstallPrompt";
+import {
+  enableNotifications,
+  disableNotifications,
+  getSubscriptionStatus,
+  isPushSupported,
+  showLocalTestNotification,
+} from "../notifications";
 
 const DAY_OPTIONS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
@@ -30,6 +39,38 @@ export default function Settings() {
   const [notifStatus, setNotifStatus] = useState<"unknown" | "on" | "off">("unknown");
   const [notifBusy, setNotifBusy] = useState(false);
   const [notifError, setNotifError] = useState<string | null>(null);
+  const [testBusy, setTestBusy] = useState<string | null>(null);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+
+  function describeTest(r: PushTestResult): string {
+    if (r.skipped) return r.skipped;
+    if (!r.subscriptions) return "No browser is subscribed yet — turn notifications on first.";
+    if (r.failed && !r.sent) {
+      return `The server couldn't deliver it: ${r.errors?.[0] ?? "unknown error"}. If "Test in browser" works but this doesn't, the push service is being blocked — usually the network or an ad-blocker.`;
+    }
+    return `Sent to ${r.sent} browser${r.sent === 1 ? "" : "s"}.${r.preview ? ` Message: "${r.preview}"` : ""}`;
+  }
+
+  async function runTest(kind: "local" | "ping" | "schedule" | "assignments") {
+    setTestBusy(kind);
+    setTestMsg(null);
+    try {
+      if (kind === "local") {
+        const r = await showLocalTestNotification();
+        setTestMsg(
+          r.ok
+            ? "Sent — a notification should appear now. If it doesn't, check your system's Do Not Disturb / Focus mode."
+            : r.reason ?? "Couldn't show a notification."
+        );
+      } else {
+        setTestMsg(describeTest(await sendTestPush(kind)));
+      }
+    } catch (err: any) {
+      setTestMsg(err.message ?? "Test failed.");
+    } finally {
+      setTestBusy(null);
+    }
+  }
 
   useEffect(() => {
     getSubscriptionStatus().then((sub) => setNotifStatus(sub ? "on" : "off"));
@@ -118,6 +159,10 @@ export default function Settings() {
         </div>
       )}
 
+      {/* ───────── Install ───────── */}
+      <h3 style={{ fontSize: 16, marginBottom: 8 }}>App</h3>
+      <InstallPrompt />
+
       {/* ───────── Notifications ───────── */}
       <h3 style={{ fontSize: 16, marginBottom: 8 }}>Notifications</h3>
       {!isPushSupported() ? (
@@ -146,6 +191,25 @@ export default function Settings() {
           {notifError && (
             <div style={{ color: "var(--overdue-text)", fontSize: 13, marginTop: 8 }}>{notifError}</div>
           )}
+
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 8 }}>TEST IT NOW</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn" disabled={testBusy !== null} onClick={() => runTest("local")}>
+                {testBusy === "local" ? "..." : "Test in browser"}
+              </button>
+              <button className="btn" disabled={testBusy !== null} onClick={() => runTest("ping")}>
+                {testBusy === "ping" ? "..." : "Test from server"}
+              </button>
+              <button className="btn" disabled={testBusy !== null} onClick={() => runTest("schedule")}>
+                {testBusy === "schedule" ? "..." : "Send tomorrow's schedule"}
+              </button>
+              <button className="btn" disabled={testBusy !== null} onClick={() => runTest("assignments")}>
+                {testBusy === "assignments" ? "..." : "Send assignment reminder"}
+              </button>
+            </div>
+            {testMsg && <div style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 10 }}>{testMsg}</div>}
+          </div>
         </div>
       )}
 
@@ -215,7 +279,7 @@ export default function Settings() {
           <div>
             <div style={{ fontWeight: 700 }}>{c.code} — {c.name}</div>
             <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
-              {c.instructor}{c.room ? ` · ${c.room}` : ""}
+              {c.instructor}{c.room ? ` · ${c.room}` : ""} · {c.credits} credits
             </div>
           </div>
           <button
@@ -263,15 +327,17 @@ function AddCourseForm({ onAdded }: { onAdded: () => void }) {
   const [name, setName] = useState("");
   const [instructor, setInstructor] = useState("");
   const [room, setRoom] = useState("");
+  const [credits, setCredits] = useState("3");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!code.trim() || !name.trim() || !instructor.trim()) return;
-    await createCourse({ code: code.trim(), name: name.trim(), instructor: instructor.trim(), room: room.trim() || undefined });
+    await createCourse({ code: code.trim(), name: name.trim(), instructor: instructor.trim(), room: room.trim() || undefined, credits: Number(credits) || 3 });
     setCode("");
     setName("");
     setInstructor("");
     setRoom("");
+    setCredits("3");
     onAdded();
   }
 
@@ -281,6 +347,7 @@ function AddCourseForm({ onAdded }: { onAdded: () => void }) {
       <input type="text" placeholder="Course name" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
       <input type="text" placeholder="Instructor" value={instructor} onChange={(e) => setInstructor(e.target.value)} style={{ width: 160 }} />
       <input type="text" placeholder="Room (optional)" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 100 }} />
+      <input type="number" min={1} max={10} title="Credit hours" value={credits} onChange={(e) => setCredits(e.target.value)} style={{ width: 70 }} />
       <button className="btn primary" type="submit">Add course</button>
     </form>
   );

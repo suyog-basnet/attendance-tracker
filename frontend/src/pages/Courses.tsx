@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Materials from "../materials";
 import {
   getCourses,
   getAssignments,
@@ -152,6 +153,10 @@ export default function Courses() {
                       </div>
                     ))
                   )}
+                </div>
+
+                <div style={{ marginTop: 16 }}>
+                  <Materials courseId={course.id} />
                 </div>
               </div>
             )}
