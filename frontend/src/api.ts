@@ -101,6 +101,10 @@ export const updateSemesterTarget = (id: number, attendance_target: number) =>
 
 export const createCourse = (body: { code: string; name: string; instructor: string; room?: string; credits?: number }) =>
   request<Course>("/courses", { method: "POST", body: JSON.stringify(body) });
+export const updateCourse = (
+  id: number,
+  body: { code?: string; name?: string; instructor?: string; room?: string; credits?: number }
+) => request<Course>(`/courses/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 export const deleteCourse = (id: number) => request(`/courses/${id}`, { method: "DELETE" });
 
 export const createSlot = (body: { course_id: number; day_of_week: number; start_time: string; end_time: string }) =>
@@ -286,3 +290,42 @@ export interface PushTestResult {
 }
 export const sendTestPush = (type: "ping" | "schedule" | "assignments") =>
   request<PushTestResult>("/push/test", { method: "POST", body: JSON.stringify({ type }) });
+
+// ---------- Backup / restore ----------
+export const exportBackupUrl = () => `${API_BASE}/backup/export`;
+
+export interface ImportResult {
+  ok: boolean;
+  restored: Record<string, number>;
+}
+
+export async function importBackup(file: File): Promise<ImportResult> {
+  const text = await file.text();
+  let parsed: any;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("That file isn't valid JSON — pick the file KU Tracker exported.");
+  }
+  const res = await fetch(`${API_BASE}/backup/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(parsed),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+// ---------- Whole-day holiday ----------
+export interface HolidayResult {
+  date: string;
+  total_classes: number;
+  applied: string[];
+  already: string[];
+  locked: string[];
+}
+export const markDayHoliday = (date: string, reason?: string) =>
+  request<HolidayResult>("/attendance/holiday", { method: "POST", body: JSON.stringify({ date, reason }) });

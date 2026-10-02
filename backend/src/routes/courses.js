@@ -55,6 +55,51 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// ─── PATCH /courses/:id — edit code, name, instructor, room, or credits ──────
+// Only touches fields actually sent, same "field present in body?" pattern
+// as assignments' PATCH, so e.g. sending just { instructor } leaves the
+// rest untouched rather than needing the whole course re-sent.
+router.patch('/:id', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const fieldMap = {
+      code:       body.code !== undefined ? String(body.code).trim() : undefined,
+      name:       body.name !== undefined ? String(body.name).trim() : undefined,
+      instructor: body.instructor !== undefined ? String(body.instructor).trim() : undefined,
+      room:       body.room !== undefined ? (String(body.room).trim() || null) : undefined,
+      credits:    body.credits !== undefined ? Number(body.credits) : undefined,
+    };
+
+    const setClauses = [];
+    const values = [];
+    let i = 1;
+    for (const [key, value] of Object.entries(fieldMap)) {
+      if (value !== undefined) {
+        setClauses.push(`${key} = $${i}`);
+        values.push(value);
+        i++;
+      }
+    }
+    if (!setClauses.length) return res.status(400).json({ error: 'No updatable fields provided' });
+
+    values.push(req.params.id);
+    const { rows } = await db.query(
+      `UPDATE courses SET ${setClauses.join(', ')} WHERE id = $${i} RETURNING *`,
+      values
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Course not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    // (code, semester_id) is unique — renaming a code to one that already
+    // exists in this semester hits that constraint rather than silently
+    // merging two courses.
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'A course with this code already exists in this semester' });
+    }
+    next(err);
+  }
+});
+
 // ─── DELETE /courses/:id — remove a course (cascades slots/attendance) ───────
 router.delete('/:id', async (req, res, next) => {
   try {

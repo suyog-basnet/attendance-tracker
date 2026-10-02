@@ -9,6 +9,7 @@ import {
   updateSemesterTarget,
   getCourses,
   createCourse,
+  updateCourse,
   deleteCourse,
   createSlot,
   sendTestPush,
@@ -18,10 +19,11 @@ import {
   Course,
 } from "../api";
 import InstallPrompt from "../InstallPrompt";
+import BackupRestore from "../BackupRestore";
 import {
   enableNotifications,
   disableNotifications,
-  getSubscriptionStatus,
+  syncSubscription,
   isPushSupported,
   showLocalTestNotification,
 } from "../notifications";
@@ -44,7 +46,9 @@ export default function Settings() {
 
   function describeTest(r: PushTestResult): string {
     if (r.skipped) return r.skipped;
-    if (!r.subscriptions) return "No browser is subscribed yet — turn notifications on first.";
+    if (!r.subscriptions) {
+      return "The server has no saved subscription for this browser. Reload this page — it re-registers automatically, and any problem will show above. If it keeps happening, turn notifications off and on again.";
+    }
     if (r.failed && !r.sent) {
       return `The server couldn't deliver it: ${r.errors?.[0] ?? "unknown error"}. If "Test in browser" works but this doesn't, the push service is being blocked — usually the network or an ad-blocker.`;
     }
@@ -73,7 +77,10 @@ export default function Settings() {
   }
 
   useEffect(() => {
-    getSubscriptionStatus().then((sub) => setNotifStatus(sub ? "on" : "off"));
+    syncSubscription().then((r) => {
+      setNotifStatus(r.status);
+      if (r.error) setNotifError(r.error);
+    });
   }, []);
 
   async function handleToggleNotifications() {
@@ -159,9 +166,13 @@ export default function Settings() {
         </div>
       )}
 
+      <div className="settings-grid">
+      <div>
       {/* ───────── Install ───────── */}
       <h3 style={{ fontSize: 16, marginBottom: 8 }}>App</h3>
       <InstallPrompt />
+
+      <BackupRestore />
 
       {/* ───────── Notifications ───────── */}
       <h3 style={{ fontSize: 16, marginBottom: 8 }}>Notifications</h3>
@@ -250,8 +261,8 @@ export default function Settings() {
       </p>
 
       {activeSemester && (
-        <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-          <div>
+        <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 24 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700 }}>Attendance target</div>
             <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
               Used for "classes you can miss" calculations in {activeSemester.name}
@@ -265,6 +276,8 @@ export default function Settings() {
         </div>
       )}
 
+      </div>
+      <div>
       {/* ───────── Courses in the active semester ───────── */}
       <h3 style={{ fontSize: 16, marginBottom: 8 }}>
         Courses in {activeSemester?.name ?? "the active semester"}
@@ -275,25 +288,7 @@ export default function Settings() {
         </p>
       )}
       {courses.map((c) => (
-        <div key={c.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div style={{ fontWeight: 700 }}>{c.code} — {c.name}</div>
-            <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
-              {c.instructor}{c.room ? ` · ${c.room}` : ""} · {c.credits} credits
-            </div>
-          </div>
-          <button
-            className="btn"
-            onClick={async () => {
-              if (confirm(`Delete ${c.code}? This also removes its schedule, attendance, and links to any assignments.`)) {
-                await deleteCourse(c.id);
-                load();
-              }
-            }}
-          >
-            Delete
-          </button>
-        </div>
+        <CourseRow key={c.id} course={c} onChanged={load} />
       ))}
       <AddCourseForm onAdded={load} />
 
@@ -318,6 +313,97 @@ export default function Settings() {
         </div>
       ))}
       <AddSlotForm courses={courses} onAdded={load} />
+      </div>
+      </div>
+    </div>
+  );
+}
+
+function CourseRow({ course, onChanged }: { course: Course; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [code, setCode] = useState(course.code);
+  const [name, setName] = useState(course.name);
+  const [instructor, setInstructor] = useState(course.instructor);
+  const [room, setRoom] = useState(course.room ?? "");
+  const [credits, setCredits] = useState(String(course.credits));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function cancel() {
+    setEditing(false);
+    setError(null);
+    setCode(course.code);
+    setName(course.name);
+    setInstructor(course.instructor);
+    setRoom(course.room ?? "");
+    setCredits(String(course.credits));
+  }
+
+  async function save() {
+    if (!code.trim() || !name.trim() || !instructor.trim()) {
+      setError("Code, name, and instructor can't be empty.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await updateCourse(course.id, {
+        code: code.trim(),
+        name: name.trim(),
+        instructor: instructor.trim(),
+        room: room.trim(),
+        credits: Number(credits) || 3,
+      });
+      setEditing(false);
+      onChanged();
+    } catch (err: any) {
+      setError(err.message ?? "Couldn't save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+          <div style={{ fontWeight: 700 }}>{course.code} — {course.name}</div>
+          <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
+            {course.instructor}{course.room ? ` · ${course.room}` : ""} · {course.credits} credits
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn" onClick={() => setEditing(true)}>Edit</button>
+          <button
+            className="btn"
+            onClick={async () => {
+              if (confirm(`Delete ${course.code}? This also removes its schedule, attendance, and links to any assignments.`)) {
+                await deleteCourse(course.id);
+                onChanged();
+              }
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input type="text" placeholder="Code" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 150 }} />
+        <input type="text" placeholder="Course name" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
+        <input type="text" placeholder="Instructor" value={instructor} onChange={(e) => setInstructor(e.target.value)} style={{ width: 180 }} />
+        <input type="text" placeholder="Room" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 110 }} />
+        <input type="number" min={1} max={10} title="Credits" value={credits} onChange={(e) => setCredits(e.target.value)} style={{ width: 70 }} />
+      </div>
+      {error && <div style={{ color: "var(--overdue-text)", fontSize: 13, marginTop: 8 }}>{error}</div>}
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <button className="btn primary" disabled={busy} onClick={save}>{busy ? "Saving..." : "Save"}</button>
+        <button className="btn" disabled={busy} onClick={cancel}>Cancel</button>
+      </div>
     </div>
   );
 }
@@ -343,10 +429,10 @@ function AddCourseForm({ onAdded }: { onAdded: () => void }) {
 
   return (
     <form onSubmit={submit} className="card" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <input type="text" placeholder="Code (e.g. COMP 501)" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 140 }} />
+      <input type="text" placeholder="Code (e.g. COMP 501)" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 170 }} />
       <input type="text" placeholder="Course name" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
       <input type="text" placeholder="Instructor" value={instructor} onChange={(e) => setInstructor(e.target.value)} style={{ width: 160 }} />
-      <input type="text" placeholder="Room (optional)" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 100 }} />
+      <input type="text" placeholder="Room (optional)" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 130 }} />
       <input type="number" min={1} max={10} title="Credit hours" value={credits} onChange={(e) => setCredits(e.target.value)} style={{ width: 70 }} />
       <button className="btn primary" type="submit">Add course</button>
     </form>
@@ -404,12 +490,12 @@ function SlotEditor({
   const [end, setEnd] = useState(slot.end_time.slice(0, 5));
 
   return (
-    <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <div>
+    <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+      <div style={{ flex: "1 1 200px", minWidth: 0 }}>
         <div style={{ fontWeight: 700 }}>{slot.code} — {slot.name}</div>
         <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{slot.instructor}</div>
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
         <span style={{ color: "var(--text-muted)" }}>–</span>
         <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />

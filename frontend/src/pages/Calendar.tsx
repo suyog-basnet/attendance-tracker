@@ -4,6 +4,8 @@ import {
   getExams,
   getAssignments,
   getAttendanceByDate,
+  markDayHoliday,
+  HolidayResult,
   todayLocal,
   WeekDay,
   Exam,
@@ -50,6 +52,7 @@ export default function Calendar() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [attendance, setAttendance] = useState<AttendanceByDate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [holidayBusy, setHolidayBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -93,6 +96,32 @@ export default function Calendar() {
     const [y, m, d] = dateStr.split("-").map(Number);
     const idx = scheduleIndex(new Date(y, m - 1, d).getDay());
     return idx === -1 ? [] : week[idx]?.slots ?? [];
+  }
+
+  function describeHoliday(r: HolidayResult): string {
+    const bits = [];
+    if (r.applied.length) bits.push(`marked not held: ${r.applied.join(", ")}`);
+    if (r.already.length) bits.push(`already not held: ${r.already.join(", ")}`);
+    if (r.locked.length) bits.push(`couldn't change (already edited twice that day): ${r.locked.join(", ")}`);
+    return bits.length ? bits.join(" · ") : "No classes scheduled that day.";
+  }
+
+  async function handleHoliday() {
+    const classCount = classesOn(selected).length;
+    if (!window.confirm(`Mark all ${classCount} class${classCount === 1 ? "" : "es"} on ${selected} as not held?`)) {
+      return;
+    }
+    setHolidayBusy(true);
+    try {
+      const result = await markDayHoliday(selected, "Holiday");
+      window.alert(describeHoliday(result));
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      getAttendanceByDate(ymd(year, month, 1), ymd(year, month, lastDay)).then(setAttendance).catch(() => {});
+    } catch (err: any) {
+      window.alert(`Couldn't mark the day as a holiday: ${err.message}`);
+    } finally {
+      setHolidayBusy(false);
+    }
   }
 
   function shiftMonth(delta: number) {
@@ -214,7 +243,14 @@ export default function Calendar() {
         })}
       </div>
 
-      <h3 style={{ fontSize: 16, margin: "24px 0 4px" }}>{selected}</h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "24px 0 4px" }}>
+        <h3 style={{ fontSize: 16, margin: 0 }}>{selected}</h3>
+        {selClasses.length > 0 && (
+          <button className="btn" disabled={holidayBusy} onClick={handleHoliday}>
+            {holidayBusy ? "..." : "📅 Mark this day as holiday"}
+          </button>
+        )}
+      </div>
       {selAtt.length > 0 && (
         <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "0 0 10px" }}>
           Attendance: {selAtt.filter((a) => a.status === "present").length} present ·{" "}

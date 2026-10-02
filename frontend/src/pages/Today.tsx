@@ -10,6 +10,8 @@ import {
   CourseSlot,
   MAX_EDITS_PER_DAY,
   NOT_HELD_REASONS,
+  markDayHoliday,
+  HolidayResult,
 } from "../api";
 
 interface AttendanceState {
@@ -28,6 +30,7 @@ export default function Today() {
   const [error, setError] = useState<string | null>(null);
   // course_id whose "why wasn't it held?" picker is currently open
   const [pickingReason, setPickingReason] = useState<number | null>(null);
+  const [holidayBusy, setHolidayBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,6 +104,31 @@ export default function Today() {
     }
   }
 
+  function describeHoliday(r: HolidayResult): string {
+    const bits = [];
+    if (r.applied.length) bits.push(`marked not held: ${r.applied.join(", ")}`);
+    if (r.already.length) bits.push(`already not held: ${r.already.join(", ")}`);
+    if (r.locked.length) bits.push(`couldn't change (already edited twice today): ${r.locked.join(", ")}`);
+    return bits.length ? bits.join(" · ") : "No classes scheduled today.";
+  }
+
+  async function handleHoliday() {
+    const today = todayLocal();
+    if (!window.confirm(`Mark all of today's ${slots.length} class${slots.length === 1 ? "" : "es"} as not held? This won't count for or against your attendance.`)) {
+      return;
+    }
+    setHolidayBusy(true);
+    try {
+      const result = await markDayHoliday(today, "Holiday");
+      window.alert(describeHoliday(result));
+      load();
+    } catch (err: any) {
+      window.alert(`Couldn't mark the day as a holiday: ${err.message}`);
+    } finally {
+      setHolidayBusy(false);
+    }
+  }
+
   async function handleReset(course_id: number) {
     const today = todayLocal();
     try {
@@ -132,6 +160,12 @@ export default function Today() {
           timeZone: "Asia/Kathmandu",
         })}
       </p>
+
+      {!isWeekend && slots.length > 0 && !error && (
+        <button className="btn" style={{ marginBottom: 16 }} disabled={holidayBusy} onClick={handleHoliday}>
+          {holidayBusy ? "..." : "📅 Mark whole day as holiday"}
+        </button>
+      )}
 
       {error && (
         <div className="error-banner">

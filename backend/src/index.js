@@ -11,6 +11,7 @@ const semesterRoutes    = require('./routes/semesters');
 const examRoutes        = require('./routes/exams');
 const pushRoutes        = require('./routes/push');
 const materialRoutes    = require('./routes/materials');
+const backupRoutes      = require('./routes/backup');
 const { startWebPushJobs } = require('./jobs/webPushJobs');
 
 const app = express();
@@ -30,6 +31,7 @@ app.use('/semesters',   semesterRoutes);
 app.use('/exams',       examRoutes);
 app.use('/push',        pushRoutes);
 app.use('/materials',   materialRoutes);
+app.use('/backup',      backupRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', time: new Date() }));

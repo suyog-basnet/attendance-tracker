@@ -99,6 +99,83 @@ router.delete('/', async (req, res, next) => {
 // ─── GET /attendance/by-date?from=YYYY-MM-DD&to=YYYY-MM-DD ───────────────────
 // Every marked class in the active semester within a date range — feeds the
 // calendar. Unmarked (reset) rows are left out.
+// Maps a 'YYYY-MM-DD' string to the schedule's 0=Mon..4=Fri (-1 for weekend).
+// Parsed at UTC noon so no server timezone can shift it onto the wrong day.
+function scheduleDayOfWeek(dateStr) {
+  const jsDow = new Date(`${dateStr}T12:00:00Z`).getUTCDay(); // 0=Sun..6=Sat
+  const map = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4 };
+  return map[jsDow] ?? -1;
+}
+
+// ─── POST /attendance/holiday — mark every class that day as not held ────────
+// One click instead of "Not held" on each class individually. Still goes
+// through the same per-class edit-count lock as everything else, so it
+// can't be used to bypass the anti-spam rule — a class already at the
+// change limit is reported back as locked, not silently skipped or forced.
+router.post('/holiday', async (req, res, next) => {
+  try {
+    const { date } = req.body;
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date is required as YYYY-MM-DD' });
+    }
+    const reason = (String(req.body.reason ?? '').trim().slice(0, 100) || 'Holiday');
+
+    const dow = scheduleDayOfWeek(date);
+    if (dow === -1) {
+      return res.json({ date, day_name: 'Weekend', total_classes: 0, applied: [], already: [], locked: [] });
+    }
+
+    const { rows: slots } = await db.query(
+      `SELECT c.id AS course_id, c.code
+       FROM schedule_slots s
+       JOIN courses c ON c.id = s.course_id
+       JOIN semesters sem ON sem.id = c.semester_id AND sem.is_active = TRUE
+       WHERE s.day_of_week = $1
+       ORDER BY c.code`,
+      [dow]
+    );
+
+    const applied = [];
+    const already = [];
+    const locked = [];
+
+    for (const slot of slots) {
+      const { rows: existing } = await db.query(
+        `SELECT status, edit_count FROM attendance_records WHERE course_id = $1 AND date = $2`,
+        [slot.course_id, date]
+      );
+
+      if (existing.length && existing[0].status === 'cancelled') {
+        already.push(slot.code);
+        continue;
+      }
+      if (existing.length && existing[0].edit_count >= MAX_EDITS_PER_DAY) {
+        locked.push(slot.code);
+        continue;
+      }
+
+      await db.query(
+        `INSERT INTO attendance_records (course_id, date, status, reason, edit_count)
+         VALUES ($1, $2, 'cancelled', $3, 1)
+         ON CONFLICT (course_id, date)
+           DO UPDATE SET status = 'cancelled', reason = $3, edit_count = attendance_records.edit_count + 1`,
+        [slot.course_id, date, reason]
+      );
+      applied.push(slot.code);
+    }
+
+    res.json({
+      date,
+      total_classes: slots.length,
+      applied,
+      already,
+      locked,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/by-date', async (req, res, next) => {
   try {
     const { from, to } = req.query;

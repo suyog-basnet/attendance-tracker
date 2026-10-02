@@ -86,3 +86,45 @@ export async function showLocalTestNotification(): Promise<{ ok: boolean; reason
   });
   return { ok: true };
 }
+
+// The browser's subscription is only valid for the VAPID key it was created
+// with. If the server's key has changed since (e.g. you generated your own),
+// the old subscription can never receive anything and must be replaced.
+export function keysMatch(sub: PushSubscription, publicKey: string): boolean {
+  const current = sub.options?.applicationServerKey;
+  if (!current) return true; // can't tell — assume fine
+  const a = new Uint8Array(current);
+  const b = urlBase64ToUint8Array(publicKey);
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+// Run when the Settings page opens. "Notifications are on" used to mean only
+// "this browser holds a subscription" — never that the server knew about it.
+// This re-registers it (the endpoint is an upsert, so it's safe to repeat) and
+// reports honestly if the server couldn't save it.
+export async function syncSubscription(): Promise<{ status: "on" | "off"; error?: string }> {
+  const sub = await getSubscriptionStatus();
+  if (!sub) return { status: "off" };
+
+  try {
+    const { publicKey, configured } = await getVapidPublicKey();
+    if (configured && publicKey && !keysMatch(sub, publicKey)) {
+      await sub.unsubscribe();
+      return {
+        status: "off",
+        error:
+          "The server's notification keys changed since you turned notifications on, so the old subscription was removed. Turn notifications on again.",
+      };
+    }
+    await subscribePush(sub.toJSON());
+    return { status: "on" };
+  } catch (err: any) {
+    const msg = String(err?.message ?? err);
+    const hint = msg.includes("push_subscriptions")
+      ? " The database is missing the push_subscriptions table — run migrate_all.sql."
+      : msg.includes("Failed to fetch")
+      ? " Is the backend running?"
+      : "";
+    return { status: "on", error: `Couldn't register this browser with the server: ${msg}.${hint}` };
+  }
+}

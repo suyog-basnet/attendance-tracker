@@ -37,6 +37,7 @@ export default function App() {
         ))}
       </aside>
       <main className="main">
+        <div className="page">
         <Routes>
           <Route path="/" element={<Today />} />
           <Route path="/week" element={<Week />} />
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="/stats" element={<Stats />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
+        </div>
       </main>
     </div>
   );
