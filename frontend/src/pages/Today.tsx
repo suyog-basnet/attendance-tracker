@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
+import WeeklySummary from "../WeeklySummary";
 import {
   getToday,
   markAttendance,
@@ -82,6 +83,31 @@ export default function Today() {
     load();
   }, [load]);
 
+  // Keyboard shortcuts: P marks the next unmarked class present, A marks it
+  // absent. Ignored while typing in a field, and the class has to actually
+  // be unmarked and unlocked, so this can't accidentally overwrite anything.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+      if (key !== "p" && key !== "a") return;
+
+      const next = slots.find((s) => {
+        const st = attendance[s.course_id];
+        return !st || (st.status === null && st.editCount < MAX_EDITS_PER_DAY);
+      });
+      if (!next) return;
+
+      e.preventDefault();
+      handleMark(next.course_id, key === "p" ? "present" : "absent");
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [slots, attendance]);
+
   async function handleMark(course_id: number, status: "present" | "absent" | "cancelled", reason?: string) {
     const today = todayLocal();
     try {
@@ -161,10 +187,17 @@ export default function Today() {
         })}
       </p>
 
+      <WeeklySummary />
+
       {!isWeekend && slots.length > 0 && !error && (
-        <button className="btn" style={{ marginBottom: 16 }} disabled={holidayBusy} onClick={handleHoliday}>
-          {holidayBusy ? "..." : "📅 Mark whole day as holiday"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+          <button className="btn" disabled={holidayBusy} onClick={handleHoliday}>
+            {holidayBusy ? "..." : "📅 Mark whole day as holiday"}
+          </button>
+          <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+            Press <strong>P</strong> / <strong>A</strong> to mark the next unmarked class
+          </span>
+        </div>
       )}
 
       {error && (

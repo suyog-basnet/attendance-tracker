@@ -31,6 +31,36 @@
   --radius-xl: 24px;
 }
 
+/* Light theme: same variable names, swapped values. Everything else in this
+   file references these variables, so nothing else needs to change. */
+[data-theme="light"] {
+  --primary: #6c63ff;
+  --primary-dim: #5147d1;
+  --accent: #e0405f;
+
+  --bg: #f5f5fa;
+  --bg-card: #ffffff;
+  --bg-card-hov: #ececf5;
+  --bg-surface: #ebebf5;
+
+  --text: #16161f;
+  --text-muted: #5c5c70;
+  --text-dim: #8d8da3;
+
+  --present: #16a34a;
+  --absent: #dc2626;
+  --warning: #d97706;
+  --info: #2563eb;
+
+  --overdue-bg: #dc262615;
+  --overdue-text: #b91c1c;
+  --due-soon-bg: #d9770615;
+  --due-soon-text: #b45309;
+
+  --border: #dcdce8;
+  --border-light: #c8c8da;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -153,12 +183,12 @@ a {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  background: #3a1f1f;
-  border: 1px solid #5c2e2e;
+  background: var(--overdue-bg);
+  border: 1px solid var(--absent);
   border-radius: var(--radius-md);
   padding: 14px 16px;
   margin-bottom: 20px;
-  color: #f5b5b5;
+  color: var(--overdue-text);
   font-size: 14px;
   line-height: 1.5;
 }

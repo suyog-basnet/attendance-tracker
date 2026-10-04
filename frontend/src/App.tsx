@@ -8,6 +8,7 @@ import Stats from "./pages/Stats";
 import Exams from "./pages/Exams";
 import Calendar from "./pages/Calendar";
 import Settings from "./pages/Settings";
+import ThemeToggle from "./ThemeToggle";
 
 const links = [
   { to: "/", label: "Today" },
@@ -35,6 +36,8 @@ export default function App() {
             {l.label}
           </NavLink>
         ))}
+        <div style={{ flex: 1 }} />
+        <ThemeToggle />
       </aside>
       <main className="main">
         <div className="page">

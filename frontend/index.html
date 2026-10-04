@@ -8,6 +8,17 @@
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>KU Tracker</title>
+    <script>
+      // Runs before React mounts / before first paint, so switching themes
+      // doesn't show a flash of the other theme first.
+      (function () {
+        var saved = localStorage.getItem("ku-tracker-theme");
+        var theme = saved === "light" || saved === "dark"
+          ? saved
+          : (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+        if (theme === "light") document.documentElement.setAttribute("data-theme", "light");
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
