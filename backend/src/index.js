@@ -15,7 +15,7 @@ const backupRoutes      = require('./routes/backup');
 const { startWebPushJobs } = require('./jobs/webPushJobs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 7391;
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(cors());
@@ -36,7 +36,37 @@ app.use('/backup',      backupRoutes);
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', time: new Date() }));
 
-// 404 handler
+// ─── Serve the built frontend (optional) ──────────────────────────────────────
+// Lets ONE process (this one) serve both the API and the web app on the same
+// port, instead of needing `npm run dev` running separately for the frontend.
+// Only kicks in if frontend/dist actually exists (i.e. you've run `npm run
+// build` in frontend/) — harmless if it doesn't, just skipped with a note.
+const path = require('path');
+const fs = require('fs');
+const FRONTEND_DIST = process.env.FRONTEND_DIST || path.join(__dirname, '..', '..', 'frontend', 'dist');
+const API_PREFIXES = [
+  '/schedule', '/attendance', '/assignments', '/push-tokens', '/courses',
+  '/semesters', '/exams', '/push', '/materials', '/backup', '/health',
+];
+
+if (fs.existsSync(path.join(FRONTEND_DIST, 'index.html'))) {
+  app.use(express.static(FRONTEND_DIST));
+  // Anything that isn't an API route and isn't a real static file (JS, CSS,
+  // icons, etc. — already served above) falls through to index.html, so
+  // React Router's client-side routes work on a hard refresh too.
+  app.get('*', (req, res, next) => {
+    if (API_PREFIXES.some((p) => req.path.startsWith(p))) return next();
+    res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+  });
+  console.log(`🖥️  Serving built frontend from ${FRONTEND_DIST}`);
+} else {
+  console.log(
+    `ℹ️  No built frontend found at ${FRONTEND_DIST} — API-only mode. ` +
+    `Run "npm run build" in frontend/ to also serve the web app from this process.`
+  );
+}
+
+// 404 handler (API routes that matched no prefix above, or frontend-less mode)
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
 // Global error handler

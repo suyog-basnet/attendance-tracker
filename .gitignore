@@ -27,3 +27,5 @@ Thumbs.db
 
 # PostgreSQL Docker
 pgdata/
+
+autostart/

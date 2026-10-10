@@ -96,9 +96,8 @@ router.delete('/', async (req, res, next) => {
   }
 });
 
-// ─── GET /attendance/by-date?from=YYYY-MM-DD&to=YYYY-MM-DD ───────────────────
-// Every marked class in the active semester within a date range — feeds the
-// calendar. Unmarked (reset) rows are left out.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 // Maps a 'YYYY-MM-DD' string to the schedule's 0=Mon..4=Fri (-1 for weekend).
 // Parsed at UTC noon so no server timezone can shift it onto the wrong day.
 function scheduleDayOfWeek(dateStr) {
@@ -107,75 +106,201 @@ function scheduleDayOfWeek(dateStr) {
   return map[jsDow] ?? -1;
 }
 
+// Every 'YYYY-MM-DD' from start to end, inclusive.
+function datesInRange(start, end) {
+  const out = [];
+  const d = new Date(`${start}T12:00:00Z`);
+  const last = new Date(`${end}T12:00:00Z`);
+  while (d <= last) {
+    out.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
+
+// Marks every class scheduled on `date` as not held. `q` is db.query or a
+// transaction client's query, so the same logic serves the single-day route
+// and the all-or-nothing range route. Still goes through the per-class edit
+// limit: a class already at the limit is reported back as locked, never
+// forced, and a class already not-held isn't touched again (so repeating the
+// action doesn't burn edits).
+async function applyHolidayForDate(q, date, reason) {
+  const dow = scheduleDayOfWeek(date);
+  if (dow === -1) return { total_classes: 0, applied: [], already: [], locked: [] };
+
+  const { rows: slots } = await q(
+    `SELECT DISTINCT c.id AS course_id, c.code
+     FROM schedule_slots s
+     JOIN courses c ON c.id = s.course_id
+     JOIN semesters sem ON sem.id = c.semester_id AND sem.is_active = TRUE
+     WHERE s.day_of_week = $1
+     ORDER BY c.code`,
+    [dow]
+  );
+
+  const applied = [];
+  const already = [];
+  const locked = [];
+
+  for (const slot of slots) {
+    const { rows: existing } = await q(
+      `SELECT status, edit_count FROM attendance_records WHERE course_id = $1 AND date = $2`,
+      [slot.course_id, date]
+    );
+
+    if (existing.length && existing[0].status === 'cancelled') {
+      already.push(slot.code);
+      continue;
+    }
+    if (existing.length && existing[0].edit_count >= MAX_EDITS_PER_DAY) {
+      locked.push(slot.code);
+      continue;
+    }
+
+    await q(
+      `INSERT INTO attendance_records (course_id, date, status, reason, edit_count)
+       VALUES ($1, $2, 'cancelled', $3, 1)
+       ON CONFLICT (course_id, date)
+         DO UPDATE SET status = 'cancelled', reason = $3, edit_count = attendance_records.edit_count + 1`,
+      [slot.course_id, date, reason]
+    );
+    applied.push(slot.code);
+  }
+
+  return { total_classes: slots.length, applied, already, locked };
+}
+
+function cleanReason(raw) {
+  return String(raw ?? '').trim().slice(0, 100) || 'Holiday';
+}
+
 // ─── POST /attendance/holiday — mark every class that day as not held ────────
-// One click instead of "Not held" on each class individually. Still goes
-// through the same per-class edit-count lock as everything else, so it
-// can't be used to bypass the anti-spam rule — a class already at the
-// change limit is reported back as locked, not silently skipped or forced.
 router.post('/holiday', async (req, res, next) => {
   try {
     const { date } = req.body;
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    if (!date || !DATE_RE.test(date)) {
       return res.status(400).json({ error: 'date is required as YYYY-MM-DD' });
     }
-    const reason = (String(req.body.reason ?? '').trim().slice(0, 100) || 'Holiday');
+    const result = await applyHolidayForDate((t, p) => db.query(t, p), date, cleanReason(req.body.reason));
+    res.json({ date, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const dow = scheduleDayOfWeek(date);
-    if (dow === -1) {
-      return res.json({ date, day_name: 'Weekend', total_classes: 0, applied: [], already: [], locked: [] });
+// A vacation is a few weeks, not a few years — and a typo'd year shouldn't
+// quietly write thousands of rows.
+const MAX_RANGE_DAYS = 400;
+
+function parseRange(body) {
+  const { start_date, end_date } = body ?? {};
+  if (!DATE_RE.test(start_date || '') || !DATE_RE.test(end_date || '')) {
+    return { error: 'start_date and end_date are required as YYYY-MM-DD' };
+  }
+  if (start_date > end_date) return { error: 'start_date must be on or before end_date' };
+  const dates = datesInRange(start_date, end_date);
+  if (dates.length > MAX_RANGE_DAYS) {
+    return { error: `Range is too long (${dates.length} days, max ${MAX_RANGE_DAYS})` };
+  }
+  return { start_date, end_date, dates };
+}
+
+// ─── POST /attendance/holiday-range — mark a whole date range as not held ────
+// For vacations. All-or-nothing: if anything fails partway, nothing is written.
+router.post('/holiday-range', async (req, res, next) => {
+  const range = parseRange(req.body);
+  if (range.error) return res.status(400).json({ error: range.error });
+  const reason = cleanReason(req.body.reason);
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const q = (t, p) => client.query(t, p);
+
+    let classDays = 0;
+    let applied = 0;
+    let already = 0;
+    let lockedCount = 0;
+    const lockedDetails = [];
+
+    for (const date of range.dates) {
+      const r = await applyHolidayForDate(q, date, reason);
+      if (r.total_classes > 0) classDays++;
+      applied += r.applied.length;
+      already += r.already.length;
+      if (r.locked.length) {
+        lockedCount += r.locked.length;
+        lockedDetails.push({ date, courses: r.locked });
+      }
     }
 
-    const { rows: slots } = await db.query(
-      `SELECT c.id AS course_id, c.code
-       FROM schedule_slots s
-       JOIN courses c ON c.id = s.course_id
-       JOIN semesters sem ON sem.id = c.semester_id AND sem.is_active = TRUE
-       WHERE s.day_of_week = $1
-       ORDER BY c.code`,
-      [dow]
-    );
-
-    const applied = [];
-    const already = [];
-    const locked = [];
-
-    for (const slot of slots) {
-      const { rows: existing } = await db.query(
-        `SELECT status, edit_count FROM attendance_records WHERE course_id = $1 AND date = $2`,
-        [slot.course_id, date]
-      );
-
-      if (existing.length && existing[0].status === 'cancelled') {
-        already.push(slot.code);
-        continue;
-      }
-      if (existing.length && existing[0].edit_count >= MAX_EDITS_PER_DAY) {
-        locked.push(slot.code);
-        continue;
-      }
-
-      await db.query(
-        `INSERT INTO attendance_records (course_id, date, status, reason, edit_count)
-         VALUES ($1, $2, 'cancelled', $3, 1)
-         ON CONFLICT (course_id, date)
-           DO UPDATE SET status = 'cancelled', reason = $3, edit_count = attendance_records.edit_count + 1`,
-        [slot.course_id, date, reason]
-      );
-      applied.push(slot.code);
-    }
-
+    await client.query('COMMIT');
     res.json({
-      date,
-      total_classes: slots.length,
+      start_date: range.start_date,
+      end_date: range.end_date,
+      total_days: range.dates.length,
+      class_days: classDays,
       applied,
       already,
-      locked,
+      locked: lockedCount,
+      locked_details: lockedDetails,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// ─── POST /attendance/holiday-range/clear — undo a holiday range ─────────────
+// Removes the not-held marks that `holiday-range` (or the one-day button)
+// created, restoring those days to untouched — including their edit allowance,
+// so a cancelled vacation doesn't leave days stuck locked. Deliberately narrow:
+// only rows that are still not-held, carry this reason, and were never edited
+// afterwards (edit_count <= 1). Anything you've since changed by hand is left
+// alone and counted in `kept_edited`.
+router.post('/holiday-range/clear', async (req, res, next) => {
+  try {
+    const range = parseRange(req.body);
+    if (range.error) return res.status(400).json({ error: range.error });
+    const reason = cleanReason(req.body.reason);
+
+    const { rows: keptRows } = await db.query(
+      `SELECT count(*)::int AS n
+       FROM attendance_records a
+       JOIN courses c ON c.id = a.course_id
+       JOIN semesters sem ON sem.id = c.semester_id AND sem.is_active = TRUE
+       WHERE a.date BETWEEN $1 AND $2 AND a.status = 'cancelled' AND a.reason = $3 AND a.edit_count > 1`,
+      [range.start_date, range.end_date, reason]
+    );
+
+    const { rowCount } = await db.query(
+      `DELETE FROM attendance_records a
+       USING courses c, semesters sem
+       WHERE c.id = a.course_id
+         AND sem.id = c.semester_id AND sem.is_active = TRUE
+         AND a.date BETWEEN $1 AND $2
+         AND a.status = 'cancelled' AND a.reason = $3 AND a.edit_count <= 1`,
+      [range.start_date, range.end_date, reason]
+    );
+
+    res.json({
+      start_date: range.start_date,
+      end_date: range.end_date,
+      removed: rowCount,
+      kept_edited: keptRows[0].n,
     });
   } catch (err) {
     next(err);
   }
 });
 
+// ─── GET /attendance/by-date?from=YYYY-MM-DD&to=YYYY-MM-DD ───────────────────
+// Every class with attendance activity in the active semester within a date
+// range — feeds the calendar. Includes rows that were marked and then reset
+// (status NULL, edit_count > 0), because the calendar needs their edit_count
+// to know a day is locked even though it currently shows as unmarked.
 router.get('/by-date', async (req, res, next) => {
   try {
     const { from, to } = req.query;
@@ -183,11 +308,11 @@ router.get('/by-date', async (req, res, next) => {
       return res.status(400).json({ error: 'from and to are required as YYYY-MM-DD' });
     }
     const { rows } = await db.query(
-      `SELECT a.date, a.course_id, a.status, a.reason, c.code, c.name AS course_name
+      `SELECT a.date, a.course_id, a.status, a.reason, a.edit_count, c.code, c.name AS course_name
        FROM attendance_records a
        JOIN courses c ON c.id = a.course_id
        JOIN semesters sem ON sem.id = c.semester_id AND sem.is_active = TRUE
-       WHERE a.status IS NOT NULL AND a.date BETWEEN $1 AND $2
+       WHERE (a.status IS NOT NULL OR a.edit_count > 0) AND a.date BETWEEN $1 AND $2
        ORDER BY a.date, c.code`,
       [from, to]
     );

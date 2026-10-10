@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import Materials from "../materials";
+import Materials from "../Materials";
 import {
   getCourses,
   getAssignments,

@@ -1,6 +1,5 @@
-// Single source of truth for the backend URL.
-// Change this if your backend runs on a different host/port.
-const API_BASE = "http://localhost:3000";
+const API_BASE: string =
+  import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://localhost:7391" : "");
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -143,8 +142,11 @@ export const markAttendance = (
 export interface AttendanceByDate {
   date: string;
   course_id: number;
-  status: "present" | "absent" | "cancelled";
+  // null = marked then reset: shows as unmarked but still counts toward the
+  // per-day edit limit, so edit_count is what tells the UI it's locked.
+  status: "present" | "absent" | "cancelled" | null;
   reason: string | null;
+  edit_count: number;
   code: string;
   course_name: string;
 }
@@ -329,3 +331,32 @@ export interface HolidayResult {
 }
 export const markDayHoliday = (date: string, reason?: string) =>
   request<HolidayResult>("/attendance/holiday", { method: "POST", body: JSON.stringify({ date, reason }) });
+
+// ---------- Holiday / vacation ranges ----------
+export interface HolidayRangeResult {
+  start_date: string;
+  end_date: string;
+  total_days: number;
+  class_days: number;
+  applied: number;
+  already: number;
+  locked: number;
+  locked_details: { date: string; courses: string[] }[];
+}
+export const markHolidayRange = (start_date: string, end_date: string, reason?: string) =>
+  request<HolidayRangeResult>("/attendance/holiday-range", {
+    method: "POST",
+    body: JSON.stringify({ start_date, end_date, reason }),
+  });
+
+export interface ClearRangeResult {
+  start_date: string;
+  end_date: string;
+  removed: number;
+  kept_edited: number;
+}
+export const clearHolidayRange = (start_date: string, end_date: string, reason?: string) =>
+  request<ClearRangeResult>("/attendance/holiday-range/clear", {
+    method: "POST",
+    body: JSON.stringify({ start_date, end_date, reason }),
+  });

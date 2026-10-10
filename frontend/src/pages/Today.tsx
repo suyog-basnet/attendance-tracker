@@ -71,7 +71,7 @@ export default function Today() {
     } catch (err: any) {
       setError(
         err?.message?.includes("Failed to fetch")
-          ? "Can't reach the backend. Make sure it's running on http://localhost:3000 (cd backend && npm run dev) and Postgres is up (docker-compose up -d)."
+          ? "Can't reach the backend. Make sure it's running (cd backend && npm run dev, or the auto-start service) and Postgres is up (docker-compose up -d)."
           : `Something went wrong loading today's schedule: ${err.message}`
       );
     } finally {
